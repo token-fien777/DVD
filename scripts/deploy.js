@@ -16,7 +16,7 @@ async function main() {
 
   // We get the contract to deploy
   const DVGToken = await hre.ethers.getContractFactory("DVGToken");
-  const dvg = await DVGToken.deploy('Your account address', new BN('The amount of DVGs minted in advance').toString());
+  const dvg = await DVGToken.deploy("Your account address", new BN("The amount of DVGs minted in advance").toString());
 
   await dvg.deployed();
 
@@ -25,7 +25,7 @@ async function main() {
   console.log("DVG token symbol:", await dvg.symbol());
   console.log("DVG token decimals:", await dvg.decimals());
   console.log("DVG token total supply:", (await dvg.totalSupply()).toString());
-  console.log("DVG token amount of account:", (await dvg.balanceOf('Your account address')).toString());
+  console.log("DVG token amount of account:", (await dvg.balanceOf("Your account address")).toString());
 }
 
 // We recommend this pattern to be able to use async/await everywhere
