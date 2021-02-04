@@ -1,14 +1,9 @@
+const { solidity } = require("ethereum-waffle");
+
 require("@nomiclabs/hardhat-waffle");
-
-// This is a sample Hardhat task. To learn how to create your own go to
-// https://hardhat.org/guides/create-task.html
-task("accounts", "Prints the list of accounts", async () => {
-  const accounts = await ethers.getSigners();
-
-  for (const account of accounts) {
-    console.log(account.address);
-  }
-});
+require("@nomiclabs/hardhat-truffle5");
+require("@nomiclabs/hardhat-web3");
+require('dotenv').config();
 
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
@@ -17,6 +12,28 @@ task("accounts", "Prints the list of accounts", async () => {
  * @type import('hardhat/config').HardhatUserConfig
  */
 module.exports = {
-  solidity: "0.7.3",
+  defaultNetwork:"hardhat",
+
+  networks: {
+    kovan: {
+      url: process.env.KOVAN_URL,
+      from: process.env.KOVAN_ACCOUNT,
+      accounts: {
+        mnemonic: process.env.KOVAN_ACCOUNT_MNEMONIC
+      }
+    },
+
+    mainnet: {
+      url: process.env.MAINNET_URL,
+      from: process.env.MAINNET_ACCOUNT,
+      accounts: {
+        mnemonic: process.env.MAINNET_ACCOUNT_MNEMONIC
+      }
+    }
+  },
+
+  solidity: {
+    version: "0.7.6"
+  }
 };
 
