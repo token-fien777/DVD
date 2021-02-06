@@ -2,6 +2,8 @@
 
 https://etherscan.io/address/0x51e00a95748dbd2a3f47bc5c3b3e7b3f0fea666c
 
+#### The smart contract is still under development (testing and auditing) and we strongly advise anyone not to deposit anything on the mainnet until we publicly launch the product.
+
 ## Definition and description
 
 $DVG tokens are governance tokens built on erc-20 Ethereum blockchain. This is release every block based on % of LP funds into $DVG smart contract pools.
