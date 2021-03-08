@@ -10,13 +10,16 @@ const LPTokenMockup = artifacts.require("LPTokenMockup");
 
 const DVG_IN_ADVANCE = new BN("10000000000000000000");  // 10 DVGs
 
-const PRECISION = new BN("1000000000000000000");  // 1e18
-const TRASURY_WALLET_PERCENT = new BN("31000000000000000000");  // 31%
-const COMMUNITY_WALLET_PERCENT = new BN("18000000000000000000");  // 18%
-const POOL_PERCENT = new BN("51000000000000000000");  // 51%
+let dvg, daoStake, lpToken1, lpToken2, tx;
 
-var dvg, daoStake, lpToken1, lpToken2, startBlock, tx;
 
+/*
+ * Here the constant variables settings in DAOstake smart contract for the test:
+ * uint256 public constant START_BLOCK = 200;
+ * uint256 public constant END_BLOCK = 210;
+ * uint256 public constant BLOCK_PER_PERIOD = 2;
+ * uint256 public constant PERIOD_AMOUNT = 5;
+ */ 
 contract("DAOstake for success", async (accounts) => {
     const TRASURY_WALLET_ADDRESS = accounts[9];
     const COMMUNITY_WALLET_ADDRESS = accounts[10];
@@ -39,53 +42,23 @@ contract("DAOstake for success", async (accounts) => {
         
         dvg = await DVGToken.new(TRASURY_WALLET_ADDRESS, DVG_IN_ADVANCE);
 
-        startBlock = (await time.latestBlock()).toNumber() + 30;
         daoStake = await DAOstake.new(
-            startBlock,  // startBlock
-            2,  // blockPerPeriod
             TRASURY_WALLET_ADDRESS,  // treasuryWalletAddr
             COMMUNITY_WALLET_ADDRESS,  // communityWalletAddr
-            dvg.address,
-            PRECISION,  // precision
-            TRASURY_WALLET_PERCENT,  // treasuryWalletPercent
-            COMMUNITY_WALLET_PERCENT,  // communityWalletPercent
-            POOL_PERCENT  // poolPercent
+            dvg.address
         );
-        await expectEvent.inConstruction(daoStake, "SetBlockPeriod", {startBlock:startBlock.toString(), blockPerPeriod:"2"});
-        await expectEvent.inConstruction(daoStake, "SetWalletAddress", {treasuryWalletAddr:TRASURY_WALLET_ADDRESS, communityWalletAddr:COMMUNITY_WALLET_ADDRESS});
-        await expectEvent.inConstruction(daoStake, "SetDVGAddress", {dvgAddr:dvg.address});
-        await expectEvent.inConstruction(daoStake, "SetPrecision", {precision:new BN("1000000000000000000")});
-        await expectEvent.inConstruction(daoStake, "SetPercent", {treasuryWalletPercent:TRASURY_WALLET_PERCENT, communityWalletPercent:COMMUNITY_WALLET_PERCENT, poolPercent:POOL_PERCENT});
 
-        assert.equal(await daoStake.startBlock(), startBlock, "The startBlock disagreement");
-        assert.equal(await daoStake.blockPerPeriod(), 2, "The blockPerPeriod disagreement");
+        await expectEvent.inConstruction(daoStake, "SetWalletAddress", {treasuryWalletAddr:TRASURY_WALLET_ADDRESS, communityWalletAddr:COMMUNITY_WALLET_ADDRESS});
+        await expectEvent.inConstruction(daoStake, "SetDVG", {dvg:dvg.address});
+
         assert.equal(await daoStake.treasuryWalletAddr(), TRASURY_WALLET_ADDRESS, "The Treasury wallet address disagreement");
         assert.equal(await daoStake.communityWalletAddr(), COMMUNITY_WALLET_ADDRESS, "The Community wallet address disagreement");
-        assert.equal(await daoStake.dvgAddr(), dvg.address, "The DVG address disagreement");
-        assert.equal((await daoStake.precision()).toString(), PRECISION, "The precision disagreement");
-        assert.equal((await daoStake.hundredPercent()).toString(), PRECISION * 100, "The hundred percent with precision disagreement");
-        assert.equal((await daoStake.treasuryWalletPercent()).toString(), TRASURY_WALLET_PERCENT, "The Treasury wallet percent disagreement");        
-        assert.equal((await daoStake.communityWalletPercent()).toString(), COMMUNITY_WALLET_PERCENT, "The Community wallet percent disagreement");
-        assert.equal((await daoStake.poolPercent()).toString(),POOL_PERCENT, "The pool percent disagreement");
+        assert.equal(await daoStake.dvg(), dvg.address, "The DVG address disagreement");
         assert.equal(await daoStake.totalPoolWeight(), 0, "The total pool weight disagreement");
 
-        // mint and distribute 20 DVGs per block in the first period
-        tx = await daoStake.setPeriodDVGPerBlock(1, new BN("20000000000000000000"));
-        await expectEvent(tx, "SetPeriodDVGPerBlock", {periodId:"1", dvgPerBlock:new BN("20000000000000000000")});
-        // mint and distribute 20 * 98% DVGs per block in the second period
-        tx = await daoStake.setPeriodDVGPerBlock(2, new BN("19600000000000000000"));
-        await expectEvent(tx, "SetPeriodDVGPerBlock", {periodId:"2", dvgPerBlock:new BN("19600000000000000000")});
-        // mint and distribute 20 * 98% * 98% DVGs per block in the third period
-        tx = await daoStake.setPeriodDVGPerBlock(3, new BN("19208000000000000000"));
-        await expectEvent(tx, "SetPeriodDVGPerBlock", {periodId:"3", dvgPerBlock:new BN("19208000000000000000")});
-        // mint and distribute 20 * 98% * 98% * 98% DVGs per block in the fourth period
-        tx = await daoStake.setPeriodDVGPerBlock(4, new BN("18823840000000000000"));
-        await expectEvent(tx, "SetPeriodDVGPerBlock", {periodId:"4", dvgPerBlock:new BN("18823840000000000000")});
-
-        assert.equal((await daoStake.periodDVGPerBlock(1)).toString(), new BN("20000000000000000000"), "The DVG amount per block of period 1 disagreement");
-        assert.equal((await daoStake.periodDVGPerBlock(2)).toString(), new BN("19600000000000000000"), "The DVG amount per block of period 2 disagreement");
-        assert.equal((await daoStake.periodDVGPerBlock(3)).toString(), new BN("19208000000000000000"), "The DVG amount per block of period 3 disagreement");
-        assert.equal((await daoStake.periodDVGPerBlock(4)).toString(), new BN("18823840000000000000"), "The DVG amount per block of period 4 disagreement");
+        for (let i = 1; i <= parseInt(await daoStake.PERIOD_AMOUNT()); i++) {
+            assert.equal(parseInt(await daoStake.periodDVGPerBlock(i)), parseInt(ether((20 * (98 ** (i-1)) / (100 ** (i-1))).toString())), `The DVG amount per block for period ${i} disagreement`);
+        }
 
         await dvg.transferOwnership(daoStake.address);
         assert.equal(await dvg.owner(), daoStake.address, "The owner of DVG should be DAOstake");
@@ -93,34 +66,14 @@ contract("DAOstake for success", async (accounts) => {
 
 
     it("Should succeed to do setups", async () => {
-        const newStartBlock = (await time.latestBlock()).toNumber() + 10;
-        tx = await daoStake.setBlockPeriod(newStartBlock, 5);
-        await expectEvent(tx, "SetBlockPeriod", {startBlock:newStartBlock.toString(), blockPerPeriod:"5"});
-        assert.equal((await daoStake.startBlock()).toNumber(), newStartBlock, "The startBlock number of DAOstake disagreement");
-        assert.equal((await daoStake.blockPerPeriod()).toNumber(), 5, "The blockPerPeriod of DAOstake disagreement");
-
         tx = await daoStake.setWalletAddress(accounts[1], accounts[2]);
         await expectEvent(tx, "SetWalletAddress", {treasuryWalletAddr:accounts[1], communityWalletAddr:accounts[2]});
         assert.equal(await daoStake.treasuryWalletAddr(), accounts[1], "The Treasury wallet address of DAOstake disagreement");
         assert.equal(await daoStake.communityWalletAddr(), accounts[2], "The Community wallet address of DAOstake disagreement");
         
-        tx = await daoStake.setDVGAddress(lpToken1.address);
-        await expectEvent(tx, "SetDVGAddress", {dvgAddr:lpToken1.address});
-        assert.equal(await daoStake.dvgAddr(), lpToken1.address, "The DVG address of DAOstake disagreement");
-
-        tx = await daoStake.setPercent(new BN("15550000000000000000"), new BN("24450000000000000000"), new BN("60000000000000000000"));
-        await expectEvent(tx, "SetPercent", {treasuryWalletPercent:new BN("15550000000000000000"), communityWalletPercent:new BN("24450000000000000000"), poolPercent:new BN("60000000000000000000")});
-        assert.equal((await daoStake.treasuryWalletPercent()).toString(), new BN("15550000000000000000"), "The Treasury wallet percent of DAOstake disagreement");
-        assert.equal((await daoStake.communityWalletPercent()).toString(), new BN("24450000000000000000"), "The Community wallet percent of DAOstake disagreement");
-        assert.equal((await daoStake.poolPercent()).toString(), new BN("60000000000000000000"), "The pool percent of DAOstake disagreement");
-
-        tx = await daoStake.setPrecision(1);
-        await expectEvent(tx, "SetPrecision", {precision:"1"});
-        assert.equal(await daoStake.precision(), 1, "The precision of DAOstake disagreement");
-
-        tx = await daoStake.setPeriodDVGPerBlock(1, 0);
-        await expectEvent(tx, "SetPeriodDVGPerBlock", {periodId:"1", dvgPerBlock:"0"});
-        assert.equal(await daoStake.periodDVGPerBlock(1), 0, "The DVG amount per block of period 1 disagreement");
+        tx = await daoStake.setDVG(lpToken1.address);
+        await expectEvent(tx, "SetDVG", {dvg:lpToken1.address});
+        assert.equal(await daoStake.dvg(), lpToken1.address, "The DVG address of DAOstake disagreement");
 
         // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
         await daoStake.addPool(lpToken1.address, 1, true);
@@ -134,32 +87,38 @@ contract("DAOstake for success", async (accounts) => {
         assert.equal(await daoStake.totalPoolWeight(), 11, "The total weight of DAOstake disagreement");
     });
 
+
+    it("Should succeed to transfer DVG ownership", async () => {
+        tx = await daoStake.transferDVGOwnership(accounts[1]);
+        await expectEvent(tx, "TransferDVGOwnership", {newOwner:accounts[1]});
+    });
  
+    
     it("Should succeed to add new pools", async () => {
         assert.equal(await daoStake.totalPoolWeight(), 0, "DAOstake should have 0 pool weight when init");
 
         // add a new pool (pool 0 -> LP token 1, pool weight 1)
         tx = await daoStake.addPool(lpToken1.address, 1, true);
-        expectEvent(tx, "AddPool", {lpTokenAddress:lpToken1.address, poolWeight:"1", lastRewardBlock:startBlock.toString()});
+        expectEvent(tx, "AddPool", {lpTokenAddress:lpToken1.address, poolWeight:"1", lastRewardBlock:await daoStake.START_BLOCK()});
         assert.equal(await daoStake.poolLength(), 1, "DAOstake should have 1 pool");
         assert.equal(await daoStake.totalPoolWeight(), 1, "Stake smart contract should have 1 pool weight totally");
 
         const pool0 = await daoStake.pool(0);
         assert.equal(pool0["lpTokenAddress"], lpToken1.address, "The pool 0 should have correct LP token");
         assert.equal(pool0["poolWeight"], 1, "The pool 0 should have 1 pool weight");
-        assert.equal(pool0["lastRewardBlock"], startBlock, "The pool 0 should have correct lastRewardBlock");
+        assert.equal(pool0["lastRewardBlock"], (await daoStake.START_BLOCK()).toString(), "The pool 0 should have correct lastRewardBlock");
         assert.equal(pool0["accDVGPerLP"], 0, "The pool 0 should have 0 accDVGPerLP");
 
         // add a new pool (pool 1 -> LP token 2, pool weight 2)
         tx = await daoStake.addPool(lpToken2.address, 2, true);
-        expectEvent(tx, "AddPool", {lpTokenAddress:lpToken2.address, poolWeight:"2", lastRewardBlock:startBlock.toString()});
+        expectEvent(tx, "AddPool", {lpTokenAddress:lpToken2.address, poolWeight:"2", lastRewardBlock:await daoStake.START_BLOCK()});
         assert.equal(await daoStake.poolLength(), 2, "DAOstake should have 2 pools");
         assert.equal(await daoStake.totalPoolWeight(), 3, "Stake smart contract should have 3 pool weights totally");
 
         const pool1 = await daoStake.pool(1);
         assert.equal(pool1["lpTokenAddress"], lpToken2.address, "The pool 1 should have correct LP token");
         assert.equal(pool1["poolWeight"], 2, "The pool 1 should have 1 pool weight");
-        assert.equal(pool1["lastRewardBlock"], startBlock, "The pool 1 should have correct lastRewardBlock");
+        assert.equal(pool1["lastRewardBlock"], (await daoStake.START_BLOCK()).toString(), "The pool 1 should have correct lastRewardBlock");
         assert.equal(pool1["accDVGPerLP"], 0, "The pool 1 should have 0 accDVGPerLP");
     });
 
@@ -264,8 +223,7 @@ contract("DAOstake for success", async (accounts) => {
     });
 
 
-  
-    it("Should record and store the distributeion of DVGs properly", async () => {
+    it("Should record, mint and distribute DVGs properly", async () => {
         // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
         await daoStake.addPool(lpToken1.address, 1, true);
         await daoStake.addPool(lpToken2.address, 2, true);
@@ -284,26 +242,30 @@ contract("DAOstake for success", async (accounts) => {
             await daoStake.deposit(1, new BN((500000000000000000 * i).toString()), {from:accounts[i]});
         }
 
-        await time.advanceBlockTo(startBlock);
+        await time.advanceBlockTo(await daoStake.START_BLOCK());
 
         tx = await daoStake.massUpdatePools();
         for (i = 0; i < 4; i++) {
-            expectEvent(tx, "UpdatePool", {poolId:i.toString(), lastRewardBlock:(startBlock + 1).toString(), totalDVG:new BN((2000000000000000000 * (i + 1)).toString())});
+            expectEvent(tx, "UpdatePool", {poolId:i.toString(), lastRewardBlock:(parseInt(await daoStake.START_BLOCK()) + 1).toString(), totalDVG:new BN((2000000000000000000 * (i + 1)).toString())});
         }
         
-        // amountForTreasuryWallet: 20(dvgPerBlock) * 31%(treasuryWalletPercent) + 10(dvgInAdvance) = 16.2
-        assert.equal((await dvg.balanceOf(TRASURY_WALLET_ADDRESS)).toString(), new BN("16200000000000000000"), "The Treasury wallet should have correct balance of DVG");
+        // DVG amount for Treasury wallet: 20(dvgPerBlock) * 24.5%(treasuryWalletPercent) + 10(dvgInAdvance) = 14.9
+        assert.equal((await dvg.balanceOf(TRASURY_WALLET_ADDRESS)).toString(), new BN("14900000000000000000"), "The Treasury wallet should have correct balance of DVG");
         
-        // amountForCommunityWallet: because pool 3 and pool 4 have no user/LP token, so the DVGs distribuited to them will be distributed to Community wallet 
-        // 20(dvgPerBlock) * 18%(communityWalletPercent) + 
+        // DVG amount for Community wallet: because pool 3 and pool 4 have no user/LP token, so the DVGs distribuited to them will be distributed to Community wallet 
+        // 20(dvgPerBlock) * 24.5%(communityWalletPercent) + 
         // 20(dvgPerBlock) * 51%(poolPercent) * (3/10)(pool2Weight/totalWeight) + 
-        // 20(dvgPerBlock) * 51%(poolPercent) * (4/10)(pool3Weight/totalWeight) = 10.74
-        assert.equal((await dvg.balanceOf(COMMUNITY_WALLET_ADDRESS)).toString(), new BN("10740000000000000000"), "The Community wallet should have correct balance of DVG");
+        // 20(dvgPerBlock) * 51%(poolPercent) * (4/10)(pool3Weight/totalWeight) = 12.04
+        assert.equal((await dvg.balanceOf(COMMUNITY_WALLET_ADDRESS)).toString(), new BN("12040000000000000000"), "The Community wallet should have correct balance of DVG");
 
-        // amountForPool: 20(dvgPerBlock) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) + 20(dvgPerBlock) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) = 3.06
+        // DVG amount for pool: 20(dvgPerBlock) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) + 20(dvgPerBlock) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) = 3.06
         assert.equal((await dvg.balanceOf(daoStake.address)).toString(), new BN("3060000000000000000"), "The DAOstake should have correct balance of DVG"); 
 
-        await time.advanceBlockTo(startBlock + 3);
+        await time.advanceBlockTo(parseInt(await daoStake.START_BLOCK()) + 3);
+
+        for (i = 1; i < 6; i++) {
+            assert.equal(await dvg.balanceOf(accounts[i]), 0, `Should not mint and distribute DVGs to user ${i} if no deposit or withdrawal`);
+        }
 
         // pending DVG amount for user 1 from pool 0:
         // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) +
@@ -342,52 +304,8 @@ contract("DAOstake for success", async (accounts) => {
 
         // check the lastRewardBlock number of each pool
         for (i = 0; i < (await daoStake.poolLength()).toNumber(); i++) {
-            assert.equal(((await daoStake.pool(i)).lastRewardBlock).toNumber(), startBlock + 1, "The pool should have correct lastRewardBlock number");
+            assert.equal(((await daoStake.pool(i)).lastRewardBlock).toNumber(), parseInt(await daoStake.START_BLOCK()) + 1, "The pool should have correct lastRewardBlock number");
         }
-    });
-
-
-    it("Should mint and distribute DVGs to stakers properly when they deposit or withdraw", async () => {
-        // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
-        await daoStake.addPool(lpToken1.address, 1, true);
-        await daoStake.addPool(lpToken2.address, 2, true);
-        await daoStake.addPool(lpToken3.address, 3, true);
-        await daoStake.addPool(lpToken4.address, 4, true);
-
-        // 2 users deposit LP token 1 (user 1 -> 0.5, user 2 -> 1)
-        await lpToken1.approve(daoStake.address, new BN("500000000000000000"), {from:accounts[1]});
-        await daoStake.deposit(0, new BN("500000000000000000"), {from:accounts[1]});
-        await lpToken1.approve(daoStake.address, new BN("1000000000000000000"), {from:accounts[2]});
-        await daoStake.deposit(0, new BN("1000000000000000000"), {from:accounts[2]});
-
-        // 5 users deposit LP token 2 (user 1 -> 0.5, user 2 -> 1, user 3 -> 1.5, user 4 -> 2, user 5 -> 2.5)
-        for (i = 1; i < 6; i++) {
-            await lpToken2.approve(daoStake.address, new BN((500000000000000000 * i).toString()), {from:accounts[i]});
-            await daoStake.deposit(1, new BN((500000000000000000 * i).toString()), {from:accounts[i]});
-        }
-
-        await time.advanceBlockTo(startBlock);
-
-        await daoStake.massUpdatePools();
-        
-        // amountForTreasuryWallet: 20(dvgPerBlock) * 31%(treasuryWalletPercent) + 10(dvgInAdvance) = 16.2
-        assert.equal((await dvg.balanceOf(TRASURY_WALLET_ADDRESS)).toString(), new BN("16200000000000000000"), "The Treasury wallet should have correct balance of DVG");
-        
-        // amountForCommunityWallet: because pool 3 and pool 4 have no user/LP token, so the DVGs distribuited to them will be distributed to Community wallet 
-        // 20(dvgPerBlock) * 18%(communityWalletPercent) + 
-        // 20(dvgPerBlock) * 51%(poolPercent) * (3/10)(pool2Weight/totalWeight) + 
-        // 20(dvgPerBlock) * 51%(poolPercent) * (4/10)(pool3Weight/totalWeight) = 10.74
-        assert.equal((await dvg.balanceOf(COMMUNITY_WALLET_ADDRESS)).toString(), new BN("10740000000000000000"), "The Community wallet should have correct balance of DVG");
-
-        // amountForPool: 20(dvgPerBlock) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) + 20(dvgPerBlock) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) = 3.06
-        assert.equal((await dvg.balanceOf(daoStake.address)).toString(), new BN("3060000000000000000"), "The DAOstake should have correct balance of DVG"); 
-
-        await time.advanceBlockTo(startBlock + 3);
-
-        for (i = 1; i < 6; i++) {
-            assert.equal(await dvg.balanceOf(accounts[i]), 0, `Should not mint and distribute DVGs to user ${i} if no deposit or withdrawal`);
-        }
-
         tx = await daoStake.deposit(0, 0, {from:accounts[1]});
         expectEvent(tx, "Deposit", {user:accounts[1], poolId:"0", amount:"0"});
         // DVG amount for user 1 from pool 0:
@@ -422,29 +340,27 @@ contract("DAOstake for success", async (accounts) => {
         }
 
         // DVG amount for Treasury wallet:
-        // pool 0: 20(dvgPerBlockOfPeriod1) * 31%(treasuryWalletPercent) * (1/10)(pool0Weight/totalWeight) 
-        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 31%(treasuryWalletPercent) * (1/10)(pool0Weight/totalWeight) = 1.8352
-        // pool 1: 20(dvgPerBlockOfPeriod1) * 31%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 31%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-        // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 31%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) = 6.052192
-        // 16.2 + 1.8352 + 6.052192 = 24.087392
-        assert.equal((await dvg.balanceOf(TRASURY_WALLET_ADDRESS)).toString(), new BN("24087392000000000000"), "The Treasury wallet should have correct balance of DVG");
+        // pool 0: 20(dvgPerBlockOfPeriod1) * 24.5%(treasuryWalletPercent) * (1/10)(pool0Weight/totalWeight) 
+        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(treasuryWalletPercent) * (1/10)(pool0Weight/totalWeight) = 1.4504
+        // pool 1: 20(dvgPerBlockOfPeriod1) * 24.5%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) 
+        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) 
+        // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 24.5%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) = 4.783184
+        // 14.9 + 1.4504 + 4.783184 = 21.133584
+        assert.equal((await dvg.balanceOf(TRASURY_WALLET_ADDRESS)).toString(), new BN("21133584000000000000"), "The Treasury wallet should have correct balance of DVG");
 
         tx = await daoStake.updatePool(2);
-        expectEvent(tx, "UpdatePool", {poolId:"2", lastRewardBlock:(startBlock + 7).toString(), totalDVG:new BN("34931952000000000000")});
+        expectEvent(tx, "UpdatePool", {poolId:"2", lastRewardBlock:(parseInt(await daoStake.START_BLOCK()) + 7).toString(), totalDVG:new BN("34931952000000000000")});
         // DVG amount for Community wallet:
-        // pool 0: 20(dvgPerBlockOfPeriod1) * 18%(communityWalletPercent) * (1/10)(pool0Weight/totalWeight) 
-        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 18%(communityWalletPercent) * (1/10)(pool0Weight/totalWeight) = 1.0656
-        // pool 1: 20(dvgPerBlockOfPeriod1) * 18%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 18%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-        // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 18%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) = 3.514176
-        // pool 2: 20(dvgPerBlockOfPeriod1) * (18%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) 
-        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * (18%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) 
-        // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * (18%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight)
-        // + 18.82384(dvgPerBlockOfPeriod4) * (18%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) = 24.10304688
-        // 10.74 + 1.0656 + 3.514176 + 24.10304688 = 39.42282288
-        assert.equal((await dvg.balanceOf(COMMUNITY_WALLET_ADDRESS)).toString(), new BN("39422822880000000000"), "The Community wallet should have correct balance of DVG");
+        // pool 0: 20(dvgPerBlockOfPeriod1) * 24.5%(communityWalletPercent) * (1/10)(pool0Weight/totalWeight) 
+        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(communityWalletPercent) * (1/10)(pool0Weight/totalWeight) = 1.4504
+        // pool 1: 20(dvgPerBlockOfPeriod1) * 24.5%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) 
+        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) 
+        // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 24.5%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) = 4.783184
+        // pool 2: 20(dvgPerBlockOfPeriod1) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) 
+        // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) 
+        // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight)
+        // + 18.82384(dvgPerBlockOfPeriod4) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) = 26.37362376
+        // 12.04 + 1.4504 + 4.783184 + 26.37362376 = 44.64720776
+        assert.equal((await dvg.balanceOf(COMMUNITY_WALLET_ADDRESS)).toString(), new BN("44647207760000000000"), "The Community wallet should have correct balance of DVG");
     });
-
-
 });

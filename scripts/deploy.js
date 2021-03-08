@@ -30,28 +30,15 @@ async function main() {
   console.log("DVG token amount of account:", (await dvg.balanceOf(process.env.KOVAN_ACCOUNT)).toString());
 
 
-  const startBlock = await hre.ethers.provider.getBlockNumber() + 50;
-  console.log("Start Block number:", startBlock);
   const daoStake = await DAOstake.deploy(
-    startBlock,  // startBlock
-    2,  // blockPerPeriod
     process.env.KOVAN_ACCOUNT,  // treasuryWalletAddr
     process.env.KOVAN_ACCOUNT,  // communityWalletAddr
-    dvg.address,
-    new BN("1000000000000000000").toString(),  // precision
-    new BN("31000000000000000000").toString(),  // treasuryWalletPercent
-    new BN("18000000000000000000").toString(),  // communityWalletPercent
-    new BN("51000000000000000000").toString()  // poolPercent
+    dvg.address
   );
 
   await daoStake.deployed();
 
   console.log("DAOsatke smart contract address:", daoStake.address);
-  
-  await daoStake.setPeriodDVGPerBlock(1, new BN("20000000000000000000").toString());
-  await daoStake.setPeriodDVGPerBlock(2, new BN("19600000000000000000").toString());
-  await daoStake.setPeriodDVGPerBlock(3, new BN("19208000000000000000").toString());
-  await daoStake.setPeriodDVGPerBlock(4, new BN("18823840000000000000").toString());
 
   await dvg.transferOwnership(daoStake.address);
   console.log("New owner of DVG token:", await dvg.owner());

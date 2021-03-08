@@ -1,12 +1,14 @@
-pragma solidity >= 0.7.0 < 0.8.0;
+// SPDX-License-Identifier: MIT
+
+
+pragma solidity 0.7.6;
 
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/IDVGToken.sol";
-import "hardhat/console.sol";
+import "./DVGToken.sol";
 
 
 contract DAOstake is Ownable {
@@ -45,36 +47,35 @@ contract DAOstake is Ownable {
     }
     
 
-    /* Block Period */
-    // Block number when start
-    uint256 public startBlock;
-    // Amount of block per period
-    uint256 public blockPerPeriod;
+    /* 
+    END_BLOCK = START_BLOCK + BLOCK_PER_PERIOD * PERIOD_AMOUNT 
+    */
+    // First block that DAOstake will start from
+    uint256 public constant START_BLOCK = 0;
+    // First block that DAOstake will end from
+    uint256 public constant END_BLOCK = 0;
+    // Amount of block per period: 6500(blocks per day) * 14(14 days/2 weeks) = 91000
+    uint256 public constant BLOCK_PER_PERIOD = 91000;
+    // Amount of period
+    uint256 public constant PERIOD_AMOUNT = 104;
 
-    /* Wallet Address */
     // Treasury wallet address
     address public treasuryWalletAddr;
     // Community wallet address
     address public communityWalletAddr;
 
-    // DVG token address
-    address public dvgAddr;
+    // DVG token 
+    DVGToken public dvg;
 
-    /* Precision and Percent */
-    uint256 public precision; 
-    uint256 public hundredPercent;
+    // Percent of DVG is distributed to treasury wallet per block: 24.5%
+    uint256 public constant TREASURY_WALLET_PERCENT = 2450;
+    // Percent of DVG is distributed to community wallet per block: 24.5%
+    uint256 public constant COMMUNITY_WALLET_PERCENT = 2450;
+    // Percent of DVG is distributed to pools per block: 51%
+    uint256 public constant POOL_PERCENT = 5100;
 
-    /* Percent for three parts */
-    // Percent of DVG is distributed to treasury wallet per block
-    uint256 public treasuryWalletPercent;
-    // Percent of DVG is distributed to community wallet per block
-    uint256 public communityWalletPercent;
-    // Percent of DVG is distributed to pools per block
-    uint256 public poolPercent;
-
-    /* Pool and User */
     // Total pool weight / Sum of all pool weights
-    uint256 public totalPoolWeight = 0;
+    uint256 public totalPoolWeight;
     Pool[] public pool;
     // pool id => user address => user info
     mapping (uint256 => mapping (address => User)) public user;
@@ -83,80 +84,44 @@ contract DAOstake is Ownable {
     mapping (uint256 => uint256) public periodDVGPerBlock;
 
 
-    event SetBlockPeriod(uint256 indexed startBlock, uint256 indexed blockPerPeriod);
-
-    event SetPeriodDVGPerBlock(uint256 indexed periodId, uint256 dvgPerBlock);
-
     event SetWalletAddress(address indexed treasuryWalletAddr, address indexed communityWalletAddr);
 
-    event SetDVGAddress(address indexed dvgAddr);
+    event SetDVG(DVGToken indexed dvg);
 
-    event SetPrecision(uint256 indexed precision);
-
-    event SetPercent(uint256 indexed treasuryWalletPercent, uint256 indexed communityWalletPercent, uint256 indexed poolPercent);
+    event TransferDVGOwnership(address indexed newOwner);
 
     event AddPool(address indexed lpTokenAddress, uint256 indexed poolWeight, uint256 indexed lastRewardBlock);
 
-    event SetPoolWeight(uint256 indexed poolId, uint256 indexed poolWeight, uint256 indexed totalPoolWeight);
+    event SetPoolWeight(uint256 indexed poolId, uint256 indexed poolWeight, uint256 totalPoolWeight);
 
-    event UpdatePool(uint256 indexed poolId, uint256 indexed lastRewardBlock, uint256 indexed totalDVG);
+    event UpdatePool(uint256 indexed poolId, uint256 indexed lastRewardBlock, uint256 totalDVG);
 
-    event Deposit(address indexed user, uint256 indexed poolId, uint256 indexed amount);
+    event Deposit(address indexed user, uint256 indexed poolId, uint256 amount);
 
-    event Withdraw(address indexed user, uint256 indexed poolId, uint256 indexed amount);
+    event Withdraw(address indexed user, uint256 indexed poolId, uint256 amount);
 
-    event EmergencyWithdraw(address indexed user, uint256 indexed poolId, uint256 indexed amount);
+    event EmergencyWithdraw(address indexed user, uint256 indexed poolId, uint256 amount);
 
 
+    /**
+     * @notice Update DVG amount per block for each period when deploying. Be careful of gas spending!
+     */
     constructor(
-        uint256 _startBlock,
-        uint256 _blockPerPeriod,
         address _treasuryWalletAddr,
         address _communityWalletAddr,
-        address _dvgAddr,
-        uint256 _precision,
-        uint256 _treasuryWalletPercent,
-        uint256 _communityWalletPercent,
-        uint256 _poolPercent
+        DVGToken _dvg
     ) public {
-        setBlockPeriod(_startBlock, _blockPerPeriod);
+        periodDVGPerBlock[1] = 20 ether;
+
+        for (uint256 i = 2; i <= PERIOD_AMOUNT; i++) {
+            periodDVGPerBlock[i] = periodDVGPerBlock[i.sub(1)].mul(9800).div(10000);
+        }
 
         setWalletAddress(_treasuryWalletAddr, _communityWalletAddr);
 
-        setDVGAddress(_dvgAddr);
-
-        setPrecision(_precision);
-
-        setPercent(_treasuryWalletPercent, _communityWalletPercent, _poolPercent);
+        setDVG(_dvg);
     }
 
-
-    /** 
-     * @notice Set all params about block/period. Can only be called by owner
-     *
-     * @param _startBlock        Block number when start
-     * @param _blockPerPeriod    Amount of block per period
-     */
-    function setBlockPeriod(uint256 _startBlock, uint256 _blockPerPeriod) public onlyOwner {
-        startBlock = _startBlock;
-        blockPerPeriod = _blockPerPeriod;
-
-        emit SetBlockPeriod(startBlock, blockPerPeriod);
-    }
-
-    /**
-     * @notice Set DVG amount per block of period. Can only be called by owner
-     *
-     * @param _periodId       Id of period
-     * @param _dvgPerBlock    DVG amount per block of period
-     */
-    function setPeriodDVGPerBlock(uint256 _periodId, uint256 _dvgPerBlock) public onlyOwner {
-        require(_periodId > 0, "Period id should larger than zero");
-
-        periodDVGPerBlock[_periodId] = _dvgPerBlock;
-
-        emit SetPeriodDVGPerBlock(_periodId, _dvgPerBlock);
-    }
 
     /** 
      * @notice Set all params about wallet address. Can only be called by owner
@@ -177,45 +142,19 @@ contract DAOstake is Ownable {
     /**
      * @notice Set DVG token address. Can only be called by owner
      */
-    function setDVGAddress(address _dvgAddr) public onlyOwner {
-        require(_dvgAddr.isContract(), "DVG address should be a smart contract address");
-
-        dvgAddr = _dvgAddr;
+    function setDVG(DVGToken _dvg) public onlyOwner {
+        dvg = _dvg;
     
-        emit SetDVGAddress(dvgAddr);
+        emit SetDVG(dvg);
     }
 
-    /** 
-     * @notice Set precision. Can only be called by owner
-     */
-    function setPrecision(uint256 _precision) public onlyOwner {
-        require(_precision > 0, "Precision should larger than zero");
-
-        precision = _precision;
-        hundredPercent = precision.mul(100);
-
-        emit SetPrecision(precision);
-    }
-
-    /** 
-     * @notice Set all params about percent for three parts. Can only be called by owner
+    /**
+     * @notice Transfer ownership of DVG token. Can only be called by this smart contract owner
      *
-     * @param _treasuryWalletPercent     Percent of DVG is distributed to treasury wallet per block
-     * @param _communityWalletPercent    Percent of DVG is distributed to community wallet per block
-     * @param _poolPercent               Percent of DVG is distributed to pools per block
      */
-    function setPercent(
-        uint256 _treasuryWalletPercent,
-        uint256 _communityWalletPercent,
-        uint256 _poolPercent
-    ) public onlyOwner {
-        require(_treasuryWalletPercent.add(_communityWalletPercent).add(_poolPercent) == hundredPercent, "Sum of three percents should be 100");
-
-        treasuryWalletPercent = _treasuryWalletPercent;
-        communityWalletPercent = _communityWalletPercent;
-        poolPercent = _poolPercent;
- 
-        emit SetPercent(treasuryWalletPercent, communityWalletPercent, poolPercent);
+    function transferDVGOwnership(address _newOwner) public onlyOwner {
+        dvg.transferOwnership(_newOwner);
+        emit TransferDVGOwnership(_newOwner);
     }
 
     /** 
@@ -232,17 +171,20 @@ contract DAOstake is Ownable {
      * @param _to      To block number (exluded)
      */
     function getMultiplier(uint256 _from, uint256 _to) public view returns(uint256 multiplier) {
-        uint256 periodOfFrom = _from.sub(startBlock).div(blockPerPeriod).add(1);
-        uint256 periodOfTo = _to.sub(startBlock).div(blockPerPeriod).add(1);
+        if (_from < START_BLOCK) {_from = START_BLOCK;}
+        if (_to > END_BLOCK) {_to = END_BLOCK;}
+
+        uint256 periodOfFrom = _from.sub(START_BLOCK).div(BLOCK_PER_PERIOD).add(1);
+        uint256 periodOfTo = _to.sub(START_BLOCK).div(BLOCK_PER_PERIOD).add(1);
         
         if (periodOfFrom == periodOfTo) {
             multiplier = _to.sub(_from).mul(periodDVGPerBlock[periodOfTo]);
         } else {
-            uint256 multiplierOfFrom = blockPerPeriod.mul(periodOfFrom).add(startBlock).sub(_from).mul(periodDVGPerBlock[periodOfFrom]);
-            uint256 multiplierOfTo = _to.sub(startBlock).mod(blockPerPeriod).mul(periodDVGPerBlock[periodOfTo]);
+            uint256 multiplierOfFrom = BLOCK_PER_PERIOD.mul(periodOfFrom).add(START_BLOCK).sub(_from).mul(periodDVGPerBlock[periodOfFrom]);
+            uint256 multiplierOfTo = _to.sub(START_BLOCK).mod(BLOCK_PER_PERIOD).mul(periodDVGPerBlock[periodOfTo]);
             multiplier = multiplierOfFrom.add(multiplierOfTo);
             for (uint256 periodId = periodOfFrom.add(1); periodId < periodOfTo; periodId++) {
-                multiplier = multiplier.add(blockPerPeriod.mul(periodDVGPerBlock[periodId]));
+                multiplier = multiplier.add(BLOCK_PER_PERIOD.mul(periodDVGPerBlock[periodId]));
             }
         }
     }
@@ -258,11 +200,11 @@ contract DAOstake is Ownable {
 
         if (block.number > pool_.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool_.lastRewardBlock, block.number);
-            uint256 dvgForPool = multiplier.mul(poolPercent).mul(pool_.poolWeight).div(totalPoolWeight).div(hundredPercent);
-            accDVGPerLP = accDVGPerLP.add(dvgForPool.mul(precision).div(lpSupply));
+            uint256 dvgForPool = multiplier.mul(POOL_PERCENT).mul(pool_.poolWeight).div(totalPoolWeight).div(10000);
+            accDVGPerLP = accDVGPerLP.add(dvgForPool.mul(1 ether).div(lpSupply));
         }
 
-        return user_.lpAmount.mul(accDVGPerLP).div(precision).sub(user_.finishedDVG);
+        return user_.lpAmount.mul(accDVGPerLP).div(1 ether).sub(user_.finishedDVG);
     }
 
     /** 
@@ -270,13 +212,14 @@ contract DAOstake is Ownable {
      * DO NOT add the same LP token more than once. DVG rewards will be messed up if you do
      */
     function addPool(address _lpTokenAddress, uint256 _poolWeight, bool _withUpdate) public onlyOwner {
-        require(_lpTokenAddress.isContract(), "LP token address should be a smart contract address");
+        require(block.number < END_BLOCK, "Already ended");
+        require(_lpTokenAddress.isContract(), "LP token address should be smart contract address");
 
         if (_withUpdate) {
             massUpdatePools();
         }
         
-        uint256 lastRewardBlock = block.number > startBlock ? block.number : startBlock;
+        uint256 lastRewardBlock = block.number > START_BLOCK ? block.number : START_BLOCK;
         totalPoolWeight = totalPoolWeight + _poolWeight;
 
         pool.push(Pool({
@@ -317,16 +260,16 @@ contract DAOstake is Ownable {
 
         uint256 lpSupply = IERC20(pool_.lpTokenAddress).balanceOf(address(this));
         if (lpSupply > 0) {
-            uint256 dvgForPool = totalDVG.mul(poolPercent).div(hundredPercent);
+            uint256 dvgForPool = totalDVG.mul(POOL_PERCENT).div(10000);
 
-            IDVGToken(dvgAddr).mint(treasuryWalletAddr, totalDVG.mul(treasuryWalletPercent).div(hundredPercent)); 
-            IDVGToken(dvgAddr).mint(communityWalletAddr, totalDVG.mul(communityWalletPercent).div(hundredPercent));
-            IDVGToken(dvgAddr).mint(address(this), dvgForPool);
+            dvg.mint(treasuryWalletAddr, totalDVG.mul(TREASURY_WALLET_PERCENT).div(10000)); 
+            dvg.mint(communityWalletAddr, totalDVG.mul(COMMUNITY_WALLET_PERCENT).div(10000));
+            dvg.mint(address(this), dvgForPool);
 
-            pool_.accDVGPerLP = pool_.accDVGPerLP.add(dvgForPool.mul(precision).div(lpSupply));
+            pool_.accDVGPerLP = pool_.accDVGPerLP.add(dvgForPool.mul(1 ether).div(lpSupply));
         } else {
-            IDVGToken(dvgAddr).mint(treasuryWalletAddr, totalDVG.mul(treasuryWalletPercent).div(hundredPercent)); 
-            IDVGToken(dvgAddr).mint(communityWalletAddr, totalDVG.mul(communityWalletPercent.add(poolPercent)).div(hundredPercent));
+            dvg.mint(treasuryWalletAddr, totalDVG.mul(TREASURY_WALLET_PERCENT).div(10000)); 
+            dvg.mint(communityWalletAddr, totalDVG.mul(COMMUNITY_WALLET_PERCENT.add(POOL_PERCENT)).div(10000));
         }
 
         pool_.lastRewardBlock = block.number;
@@ -358,7 +301,7 @@ contract DAOstake is Ownable {
         updatePool(_pid);
 
         if (user_.lpAmount > 0) {
-            uint256 pendingDVG_ = user_.lpAmount.mul(pool_.accDVGPerLP).div(precision).sub(user_.finishedDVG);
+            uint256 pendingDVG_ = user_.lpAmount.mul(pool_.accDVGPerLP).div(1 ether).sub(user_.finishedDVG);
             if(pendingDVG_ > 0) {
                 _safeDVGTransfer(msg.sender, pendingDVG_);
             }
@@ -369,7 +312,7 @@ contract DAOstake is Ownable {
             user_.lpAmount = user_.lpAmount.add(_amount);
         }
 
-        user_.finishedDVG = user_.lpAmount.mul(pool_.accDVGPerLP).div(precision);
+        user_.finishedDVG = user_.lpAmount.mul(pool_.accDVGPerLP).div(1 ether);
 
         emit Deposit(msg.sender, _pid, _amount);
     }
@@ -388,7 +331,7 @@ contract DAOstake is Ownable {
 
         updatePool(_pid);
 
-        uint256 pendingDVG_ = user_.lpAmount.mul(pool_.accDVGPerLP).div(precision).sub(user_.finishedDVG);
+        uint256 pendingDVG_ = user_.lpAmount.mul(pool_.accDVGPerLP).div(1 ether).sub(user_.finishedDVG);
 
         if(pendingDVG_ > 0) {
             _safeDVGTransfer(msg.sender, pendingDVG_);
@@ -399,7 +342,7 @@ contract DAOstake is Ownable {
             IERC20(pool_.lpTokenAddress).safeTransfer(address(msg.sender), _amount);
         }
 
-        user_.finishedDVG = user_.lpAmount.mul(pool_.accDVGPerLP).div(precision);
+        user_.finishedDVG = user_.lpAmount.mul(pool_.accDVGPerLP).div(1 ether);
 
         emit Withdraw(msg.sender, _pid, _amount);
     }
@@ -430,14 +373,12 @@ contract DAOstake is Ownable {
      * @param _amount    Amount of DVG to be transferred
      */
     function _safeDVGTransfer(address _to, uint256 _amount) internal {
-        uint256 dvgBal = IERC20(dvgAddr).balanceOf(address(this));
+        uint256 dvgBal = dvg.balanceOf(address(this));
         
         if (_amount > dvgBal) {
-            IERC20(dvgAddr).safeTransfer(_to, dvgBal);
+            dvg.transfer(_to, dvgBal);
         } else {
-            IERC20(dvgAddr).safeTransfer(_to, _amount);
+            dvg.transfer(_to, _amount);
         }
     }
-
-
 }
