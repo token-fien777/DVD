@@ -16,9 +16,7 @@ async function main() {
 
   // We get the contract to deploy
   const DVGToken = await hre.ethers.getContractFactory("DVGToken");
-  const DAOstake = await hre.ethers.getContractFactory("DAOstake");
-
-  const dvg = await DVGToken.deploy(process.env.KOVAN_ACCOUNT, new BN("10000000000000000000").toString());
+  const dvg = await DVGToken.deploy("Your account address", new BN("The amount of DVGs minted in advance").toString());
 
   await dvg.deployed();
 
@@ -27,21 +25,7 @@ async function main() {
   console.log("DVG token symbol:", await dvg.symbol());
   console.log("DVG token decimals:", await dvg.decimals());
   console.log("DVG token total supply:", (await dvg.totalSupply()).toString());
-  console.log("DVG token amount of account:", (await dvg.balanceOf(process.env.KOVAN_ACCOUNT)).toString());
-
-
-  const daoStake = await DAOstake.deploy(
-    process.env.KOVAN_ACCOUNT,  // treasuryWalletAddr
-    process.env.KOVAN_ACCOUNT,  // communityWalletAddr
-    dvg.address
-  );
-
-  await daoStake.deployed();
-
-  console.log("DAOsatke smart contract address:", daoStake.address);
-
-  await dvg.transferOwnership(daoStake.address);
-  console.log("New owner of DVG token:", await dvg.owner());
+  console.log("DVG token amount of account:", (await dvg.balanceOf("Your account address")).toString());
 }
 
 // We recommend this pattern to be able to use async/await everywhere
