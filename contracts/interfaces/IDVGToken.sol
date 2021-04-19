@@ -14,6 +14,9 @@ interface IDVGToken is IERC20 {
     /// @notice Creates `_amount` token to `_to`. Must only be called by the owner
     function mint(address _to, uint256 _amount) external;
 
+    /// @notice Destroys `_amount` tokens from `_from`. Must only be called by the owner
+    function burn(address _from, uint256 _amount) external;
+
     /**
      * @notice Delegate votes from `msg.sender` to `delegatee`
      * @param delegator The address to get delegatee for

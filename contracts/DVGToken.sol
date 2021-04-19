@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 
 
-pragma solidity 0.7.6;
+pragma solidity ^0.7.6;
 
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-
+import "./libraries/ERC20Permit.sol";
 
 /// DVG token
-contract DVGToken is ERC20("DVGToken", "DVG"), Ownable {
+contract DVGToken is ERC20Permit("DVGToken", "DVG"), Ownable {
     using Address for address;
     using SafeMath for uint256;
 
@@ -45,8 +45,12 @@ contract DVGToken is ERC20("DVGToken", "DVG"), Ownable {
     mapping (address => uint32) public numCheckpoints;
 
     /// A record of states for signing / validating signatures
-    mapping (address => uint) public nonces;
+    /// nonce has been declared in ERC20Permit.
+    // mapping (address => uint) public override nonces;
 
+    // set of minters, can be this bridge or other bridges
+    mapping(address => bool) public isMinter;
+    address[] public minters;
 
     /// An event thats emitted when an account changes its delegate
     event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
@@ -65,11 +69,47 @@ contract DVGToken is ERC20("DVGToken", "DVG"), Ownable {
         mint(treasuryWalletAddr, dvgInAdvance);
     }
 
+    modifier onlyMinter() {
+        require((owner() == msg.sender) || (isMinter[msg.sender] == true), "Restricted Access!");
+        _;
+    }
+
+    function addMinter(address _minter) external onlyOwner {
+        require(isMinter[_minter] == false, "The address already has minter role");
+        isMinter[_minter] = true;
+        minters.push(_minter);
+    }
+
+    function removeMinter(address _minter) external onlyOwner {
+        require(isMinter[_minter], "The address does not have minter role");
+        isMinter[_minter] = false;
+
+        for (uint i = 0; i < minters.length; i ++){
+            if (minters[i] == _minter) {
+                minters[i] = minters[minters.length-1];
+                minters.pop();
+                break;
+            }
+        }
+    }
+
+    function getAllMinters() external view returns (address[] memory) {
+        return minters;
+    }
 
     /// @notice Creates `_amount` token to `_to`. Must only be called by the owner
-    function mint(address _to, uint256 _amount) public onlyOwner {
+    function mint(address _to, uint256 _amount) public onlyMinter {
         _mint(_to, _amount);
         _moveDelegates(address(0), _delegates[_to], _amount);
+    }
+
+    /// @notice Destroys `_amount` tokens from `_from`. Must only be called by the owner
+    function burn(address _from, uint256 _amount) public onlyMinter {
+        _burn(_from, _amount);
+        if (_from != _msgSender()) {
+            _approve(_from, _msgSender(), allowance(_from, _msgSender()).sub(_amount, "ERC20: burn amount exceeds allowance"));
+        }
+        _moveDelegates(_delegates[_from], address(0), _amount);
     }
 
     /**

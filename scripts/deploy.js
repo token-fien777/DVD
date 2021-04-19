@@ -16,7 +16,7 @@ async function main() {
 
   // We get the contract to deploy
   const DVGToken = await hre.ethers.getContractFactory("DVGToken");
-  const dvg = await DVGToken.deploy("Your account address", new BN("The amount of DVGs minted in advance").toString());
+  const dvg = await DVGToken.deploy("0xd91Fbc9b431464D737E1BC4e76900D43405a639b", new BN("0").toString());
 
   await dvg.deployed();
 
@@ -25,7 +25,23 @@ async function main() {
   console.log("DVG token symbol:", await dvg.symbol());
   console.log("DVG token decimals:", await dvg.decimals());
   console.log("DVG token total supply:", (await dvg.totalSupply()).toString());
-  console.log("DVG token amount of account:", (await dvg.balanceOf("Your account address")).toString());
+  console.log("DVG token amount of account:", (await dvg.balanceOf("0xd91Fbc9b431464D737E1BC4e76900D43405a639b")).toString());
+
+
+  // const AnyDVGWrapper = await hre.ethers.getContractFactory("AnyDVGWrapper");
+  // const dvgWrapper = await AnyDVGWrapper.deploy(dvg.address, "MPC address");
+
+  // await dvgWrapper.deployed();
+
+  // console.log("AnyDVGWrapper smart contract address:", dvgWrapper.address);
+  // console.log("AnyDVGWrapper name:", await dvgWrapper.name());
+  // console.log("AnyDVGWrapper symbol:", await dvgWrapper.symbol());
+  // console.log("AnyDVGWrapper decimals:", await dvgWrapper.decimals());
+  // console.log("AnyDVGWrapper DVG token:", await dvgWrapper.underlying());
+  // console.log("AnyDVGWrapper vault:", await dvgWrapper.vault());
+
+  // await dvg.addMinter(dvgWrapper.address);
+  // console.log("DVG token minters:", await dvg.getAllMinters());
 }
 
 // We recommend this pattern to be able to use async/await everywhere
