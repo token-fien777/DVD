@@ -22,24 +22,31 @@ DAOstake是DAOventures的Liquidity mining流动性挖矿智能合约，用户通
 ### 用户函数：
 
 `deposit(uint256 _pid, uint256 _amount)`: 用户将ERC20 LP Token存入到相应的Pool中从而参与流动性挖矿来获取DVG奖励
+
 `withdraw(uint256 _pid, uint256 _amount)`: 用户从相应的Pool中取出ERC20 LP Token
+
 `emergencyWithdraw(uint256 _pid)`: 用户从指定的Pool中一次性取出他所有的ERC20 LP Token，注意：将不会获得DVG奖励
 
 ### 管理员函数:
 
 `setWalletAddress(address _treasuryWalletAddr, address _communityWalletAddr)`: 设置Treasury Wallet和Community Wallet的钱包地址
+
 `addPool(address _lpTokenAddress, uint256 _poolWeight, bool _withUpdate)`: 增加一个新的Pool
+
 `setPoolWeight(uint256 _pid, uint256 _poolWeight, bool _withUpdate)`: 设置更改Pool的权重
 
 ### 信息查看函数：
 
 `poolLength()`: 查看Pool数量
+
 `getMultiplier(uint256 _from, uint256 _to)`: 查看从\_from区块到\_to区块所挖出的总的DVG数量
+
 `pendingDVG(uint256 _pid, address _user)`: 查看用户在指定Pool中可获取的DVG奖励数量
 
 ### 信息更新函数：
 
 `updatePool(uint256 _pid)`: 用于更新指定Pool的信息，使其数据记录保持最新
+
 `massUpdatePools()`: 一次性批处理更新全部Pool的信息
 
 
