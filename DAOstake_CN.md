@@ -39,7 +39,7 @@ DAOstake是DAOventures的Liquidity mining流动性挖矿智能合约，用户通
 
 `poolLength()`: 查看Pool数量
 
-`getMultiplier(uint256 _from, uint256 _to)`: 查看从\_from区块到\_to区块所挖出的总的DVG数量
+`getMultiplier(uint256 _from, uint256 _to)`: 查看从`_from`区块到`_to`区块所挖出的总的DVG数量
 
 `pendingDVG(uint256 _pid, address _user)`: 查看用户在指定Pool中可获取的DVG奖励数量
 
