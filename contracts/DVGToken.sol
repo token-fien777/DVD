@@ -55,7 +55,9 @@ contract DVGToken is ERC20("DVGToken", "DVG"), Ownable {
     event DelegateVotesChanged(address indexed delegate, uint previousBalance, uint newBalance);
 
 
-    /// @notice We need mint some DVGs in advance 
+    /// @notice We need mint some DVGs in advance. 
+    /// After that, the ownership of DVG token will be transferred to DAOventures liquidity mining smart contract,
+    /// which means nobody will be able to control mining of DVG token. 
     constructor(address _treasuryWalletAddr, uint256 _dvgInAdvance) {
         require(!_treasuryWalletAddr.isContract(), "The Treasury wallet address should not be the smart contract address");
 
@@ -73,7 +75,7 @@ contract DVGToken is ERC20("DVGToken", "DVG"), Ownable {
     }
 
     /**
-     * @notice Delegate votes from `msg.sender` to `delegatee`
+     * @notice Get `delegatee` of `delegator`
      * @param delegator The address to get delegatee for
      */
     function delegates(address delegator)
@@ -221,7 +223,13 @@ contract DVGToken is ERC20("DVGToken", "DVG"), Ownable {
                 // decrease old representative
                 uint32 srcRepNum = numCheckpoints[srcRep];
                 uint256 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
-                uint256 srcRepNew = srcRepOld.sub(amount);
+                uint256 srcRepNew;
+                if (srcRepOld > amount) {
+                    srcRepNew = srcRepOld.sub(amount);
+                } else {
+                    srcRepNew = 0;
+                    amount = srcRepOld;
+                }
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 

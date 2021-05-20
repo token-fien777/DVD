@@ -110,7 +110,7 @@ contract DAOstake is Ownable {
         address _treasuryWalletAddr,
         address _communityWalletAddr,
         DVGToken _dvg
-    ) public {
+    ) {
         periodDVGPerBlock[1] = 20 ether;
 
         for (uint256 i = 2; i <= PERIOD_AMOUNT; i++) {
@@ -279,6 +279,7 @@ contract DAOstake is Ownable {
 
     /** 
      * @notice Update reward variables for all pools. Be careful of gas spending!
+     * Due to gas limit, please make sure here no significant amount of pools!
      */
     function massUpdatePools() public {
         uint256 length = pool.length;
