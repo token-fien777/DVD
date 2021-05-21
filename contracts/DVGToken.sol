@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 
-pragma solidity ^0.7.6;
+pragma solidity 0.7.6;
 
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -113,7 +113,7 @@ contract DVGToken is ERC20Permit("DVGToken", "DVG"), Ownable {
     }
 
     /**
-     * @notice Delegate votes from `msg.sender` to `delegatee`
+     * @notice Get `delegatee` of `delegator`
      * @param delegator The address to get delegatee for
      */
     function delegates(address delegator)
@@ -261,7 +261,13 @@ contract DVGToken is ERC20Permit("DVGToken", "DVG"), Ownable {
                 // decrease old representative
                 uint32 srcRepNum = numCheckpoints[srcRep];
                 uint256 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
-                uint256 srcRepNew = srcRepOld.sub(amount);
+                uint256 srcRepNew;
+                if (srcRepOld > amount) {
+                    srcRepNew = srcRepOld.sub(amount);
+                } else {
+                    srcRepNew = 0;
+                    amount = srcRepOld;
+                }
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
             }
 
