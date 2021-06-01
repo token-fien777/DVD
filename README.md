@@ -24,7 +24,7 @@ Long term demand from governance token & community involvement
 
 ### Token model 
 
-- Initial market cap. $430k market cap upon launch.
+- Initial market cap. Very small market cap at launch.
 - Deflationary model. Block rewards reduction every 2 weeks for 4 years. 
 - Low Inflation. Less than 100k DVG tokens daily. 
 - Fair launch. No pre-mine for team/advisors. 
@@ -35,10 +35,10 @@ Long term demand from governance token & community involvement
 Using a simpler model for calculation that crypto investors would understand. We architect and implemented the deflationary rewards model.
 
 - 51% for LP liquidity 
-- 20 $DVG per block
-- Less than 100k token daily inflation
+- 30 $DVG per block on Ethereum
+- Less than 100k token distributed to reduce daily inflation
 
-Deflationary model to reduce “selling pressure” in the market; 2% block rewards reduction bi-weekly.
+Deflationary model to reduce “selling pressure” in the market; 3.5% block rewards reduction bi-weekly.
 
 By the 4 years cycle, all the block rewards will be fully distributed by the smart contract. 
 
