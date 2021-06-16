@@ -255,6 +255,53 @@ contract DVGToken is ERC20Permit("DVGToken", "DVG"), Ownable {
         _moveDelegates(currentDelegate, delegatee, delegatorBalance);
     }
 
+    /**
+     * @dev See {IERC20-transfer}.
+     *
+     * Requirements:
+     *
+     * - `recipient` cannot be the zero address.
+     * - the caller must have a balance of at least `amount`.
+     */
+    function transfer(address recipient, uint256 amount) public virtual override(ERC20) returns (bool) {
+        address sender = _msgSender();
+        _transfer(sender, recipient, amount);
+        _moveDelegates(_delegates[sender], _delegates[recipient], amount);
+        return true;
+    }
+
+    /**
+     * @dev See {IERC20-transferFrom}.
+     *
+     * Emits an {Approval} event indicating the updated allowance. This is not
+     * required by the EIP. See the note at the beginning of {ERC20}.
+     *
+     * Requirements:
+     *
+     * - `sender` and `recipient` cannot be the zero address.
+     * - `sender` must have a balance of at least `amount`.
+     * - the caller must have allowance for ``sender``'s tokens of at least
+     * `amount`.
+     */
+    function transferFrom(address sender, address recipient, uint256 amount) public virtual override(ERC20) returns (bool) {
+        address spender = _msgSender();
+        uint256 spenderAllowance = allowance(sender, spender);
+        if (spenderAllowance != type(uint256).max) {
+            _approve(sender, spender, spenderAllowance.sub(amount, "ERC20: transfer amount exceeds allowance"));
+        }
+
+        _transfer(sender, recipient, amount);
+        _moveDelegates(_delegates[sender], _delegates[recipient], amount);
+        return true;
+    }
+
+    function transferWithPermit(address from, address to, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) public virtual override(ERC20Permit) returns (bool) {
+        _checkPermit(from, to, amount, deadline, v, r, s);
+        _transfer(from, to, amount);
+        _moveDelegates(_delegates[from], _delegates[to], amount);
+        return true;
+    }
+
     function _moveDelegates(address srcRep, address dstRep, uint256 amount) internal {
         if (srcRep != dstRep && amount > 0) {
             if (srcRep != address(0)) {
