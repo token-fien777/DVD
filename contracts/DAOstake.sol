@@ -111,10 +111,10 @@ contract DAOstake is Ownable {
         address _communityWalletAddr,
         DVGToken _dvg
     ) {
-        periodDVGPerBlock[1] = 20 ether;
+        periodDVGPerBlock[1] = 30 ether;
 
         for (uint256 i = 2; i <= PERIOD_AMOUNT; i++) {
-            periodDVGPerBlock[i] = periodDVGPerBlock[i.sub(1)].mul(9800).div(10000);
+            periodDVGPerBlock[i] = periodDVGPerBlock[i.sub(1)].mul(9650).div(10000);
         }
 
         setWalletAddress(_treasuryWalletAddr, _communityWalletAddr);
