@@ -131,7 +131,7 @@ contract DAOstake is Ownable {
      * @param _communityWalletAddr    Community wallet address
      */
     function setWalletAddress(address _treasuryWalletAddr, address _communityWalletAddr) public onlyOwner {
-        require((!_treasuryWalletAddr.isContract()) && (!_communityWalletAddr.isContract()), "Any wallet address should not be smart contract address");
+        require((_treasuryWalletAddr != address(0)) && (_communityWalletAddr != address(0)), "Any wallet address should not be zero address");
         
         treasuryWalletAddr = _treasuryWalletAddr;
         communityWalletAddr = _communityWalletAddr;
