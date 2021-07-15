@@ -1,38 +1,27 @@
-// We require the Hardhat Runtime Environment explicitly here. This is optional 
-// but useful for running the script in a standalone fashion through `node <script>`.
-//
-// When running the script with `hardhat run <script>` you'll find the Hardhat
-// Runtime Environment's members available in the global scope.
-const hre = require("hardhat");
-const BN = require('bn.js');
+const { ethers, upgrades } = require("hardhat");
 
 async function main() {
-  // Hardhat always runs the compile task when running scripts with its command
-  // line interface.
-  //
-  // If this script is run directly using `node` you may want to call compile 
-  // manually to make sure everything is compiled
-  // await hre.run('compile');
+  const [deployer] = await ethers.getSigners();
 
-  // We get the contract to deploy
-  const DVGToken = await hre.ethers.getContractFactory("DVGToken");
-  const dvg = await DVGToken.deploy("Your account address", new BN("The amount of DVGs minted in advance").toString());
+  const DAOventuresTokenImplementation = await ethers.getContractFactory("DAOventuresTokenImplementation");
+  const dvd = await upgrades.deployProxy(DAOventuresTokenImplementation, ["DAOventuresDeFi", "DVD", process.env.ACCOUNT, await ethers.utils.parseEther("100")]);  
+  await dvd.deployed();
 
-  await dvg.deployed();
+  console.log("deployer:", deployer.address);
+  console.log(
+    "Token address:", dvd.address,
+    "\nToken owner:", await dvd.owner(),
+    "\nToken name:", await dvd.name(),
+    "\nToken symbol:", await dvd.symbol(),
+    "\nToken decimals:", await dvd.decimals(),
+    "\nToken initial supply:", await ethers.utils.formatEther(await dvd.totalSupply()),
+    "\nToken balance of account:", await ethers.utils.formatEther(await dvd.balanceOf(process.env.ACCOUNT))
+  );
+};
 
-  console.log("DVG token smart contract address:", dvg.address);
-  console.log("DVG token name:", await dvg.name());
-  console.log("DVG token symbol:", await dvg.symbol());
-  console.log("DVG token decimals:", await dvg.decimals());
-  console.log("DVG token total supply:", (await dvg.totalSupply()).toString());
-  console.log("DVG token amount of account:", (await dvg.balanceOf("Your account address")).toString());
-}
-
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
 main()
-  .then(() => process.exit(0))
-  .catch(error => {
-    console.error(error);
-    process.exit(1);
-  });
+.then(() => process.exit(0))
+.catch(error => {
+  console.error(error);
+  process.exit(1);
+});

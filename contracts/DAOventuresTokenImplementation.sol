@@ -52,16 +52,18 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
     event DelegateVotesChanged(address indexed delegate, uint previousBalance, uint newBalance);
 
 
-    /// @notice We need mint some DVGs in advance. 
-    /// After that, the ownership of DVG token will be transferred to DAOventures liquidity mining smart contract,
-    /// which means nobody will be able to control mining of DVG token. 
     function initialize(string memory _name, string memory _symbol, address _addr, uint256 _initialSupply) external initializer {
         __ERC20_init(_name, _symbol);
+        __ERC20Burnable_init();
+        __ERC20Pausable_init();
+        __ERC20Snapshot_init();
+        __Ownable_init();
+        
         mint(_addr, _initialSupply);
     }
 
     /// @notice Creates `_amount` token to `_to`. Must only be called by the owner
-    function mint(address _to, uint256 _amount) public onlyOwner {
+    function mint(address _to, uint256 _amount) public onlyOwner whenNotPaused {
         _mint(_to, _amount);
         _moveDelegates(address(0), _delegates[_to], _amount);
     }
@@ -71,7 +73,7 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
      *
      * See {ERC20-_burn}.
      */
-    function burn(uint256 amount) public virtual override {
+    function burn(uint256 amount) public virtual override whenNotPaused {
         _burn(_msgSender(), amount);
         _moveDelegates(_delegates[_msgSender()], address(0), amount);
     }
@@ -87,7 +89,7 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
      * - the caller must have allowance for ``accounts``'s tokens of at least
      * `amount`.
      */
-    function burnFrom(address account, uint256 amount) public virtual override {
+    function burnFrom(address account, uint256 amount) public virtual override whenNotPaused {
         uint256 decreasedAllowance = allowance(account, _msgSender()).sub(amount, "ERC20: burn amount exceeds allowance");
 
         _approve(account, _msgSender(), decreasedAllowance);
@@ -104,11 +106,22 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
      * - `recipient` cannot be the zero address.
      * - the caller must have a balance of at least `amount`.
      */
-    function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
+    function transfer(address recipient, uint256 amount) public virtual override whenNotPaused returns (bool) {
         address sender = _msgSender();
         _transfer(sender, recipient, amount);
         _moveDelegates(_delegates[sender], _delegates[recipient], amount);
         return true;
+    }
+
+    /**
+     * @dev See {IERC20-approve}.
+     *
+     * Requirements:
+     *
+     * - `spender` cannot be the zero address.
+     */
+    function approve(address spender, uint256 amount) public virtual override whenNotPaused returns (bool) {
+        super.approve(spender, amount);
     }
 
     /**
@@ -124,7 +137,7 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
      * - the caller must have allowance for ``sender``'s tokens of at least
      * `amount`.
      */
-    function transferFrom(address sender, address recipient, uint256 amount) public virtual override returns (bool) {
+    function transferFrom(address sender, address recipient, uint256 amount) public virtual override whenNotPaused returns (bool) {
         address spender = _msgSender();
         uint256 spenderAllowance = allowance(sender, spender);
         if (spenderAllowance != type(uint256).max) {
@@ -134,6 +147,40 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
         _transfer(sender, recipient, amount);
         _moveDelegates(_delegates[sender], _delegates[recipient], amount);
         return true;
+    }
+
+    /**
+     * @dev Atomically increases the allowance granted to `spender` by the caller.
+     *
+     * This is an alternative to {approve} that can be used as a mitigation for
+     * problems described in {IERC20-approve}.
+     *
+     * Emits an {Approval} event indicating the updated allowance.
+     *
+     * Requirements:
+     *
+     * - `spender` cannot be the zero address.
+     */
+    function increaseAllowance(address spender, uint256 addedValue) public virtual override whenNotPaused returns (bool) {
+        super.increaseAllowance(spender, addedValue);
+    }
+
+    /**
+     * @dev Atomically decreases the allowance granted to `spender` by the caller.
+     *
+     * This is an alternative to {approve} that can be used as a mitigation for
+     * problems described in {IERC20-approve}.
+     *
+     * Emits an {Approval} event indicating the updated allowance.
+     *
+     * Requirements:
+     *
+     * - `spender` cannot be the zero address.
+     * - `spender` must have allowance for the caller of at least
+     * `subtractedValue`.
+     */
+    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual override whenNotPaused returns (bool) {
+        super.increaseAllowance(spender, subtractedValue);
     }
 
     /**
@@ -152,7 +199,7 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
     * @notice Delegate votes from `msg.sender` to `delegatee`
     * @param delegatee The address to delegate votes to
     */
-    function delegate(address delegatee) external {
+    function delegate(address delegatee) external whenNotPaused {
         return _delegate(msg.sender, delegatee);
     }
 
@@ -174,6 +221,7 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
         bytes32 s
     )
         external
+        whenNotPaused
     {
         bytes32 domainSeparator = keccak256(
             abi.encode(
@@ -271,7 +319,7 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
         internal
     {
         address currentDelegate = _delegates[delegator];
-        uint256 delegatorBalance = balanceOf(delegator); // balance of underlying DVGs (not scaled);
+        uint256 delegatorBalance = balanceOf(delegator); // balance of underlying tokens (not scaled)
         _delegates[delegator] = delegatee;
 
         emit DelegateChanged(delegator, currentDelegate, delegatee);
@@ -342,5 +390,28 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
         override(ERC20Upgradeable, ERC20PausableUpgradeable, ERC20SnapshotUpgradeable) 
     {
         super._beforeTokenTransfer(from, to, amount);
+    }
+
+    /**
+     * @dev called by the owner to pause, triggers stopped state
+     */
+    function pause() public onlyOwner whenNotPaused {
+        _pause();
+    }
+
+    /**
+     * @dev called by the owner to unpause, returns to normal state
+     */
+    function unpause() public onlyOwner whenPaused {
+        _unpause();
+    }
+
+    /** 
+     * Creates a new snapshot id. Balances are only stored in snapshots on demand: unless a snapshot was taken, a
+     * balance change will not be recorded. This means the extra added cost of storing snapshotted balances is only paid
+     * when required, but is also flexible enough that it allows for e.g. daily snapshots.
+     */ 
+    function snapshot() public returns (uint256) {
+        _snapshot();
     }
 }
