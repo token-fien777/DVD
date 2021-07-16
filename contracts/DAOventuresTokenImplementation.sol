@@ -414,4 +414,7 @@ contract DAOventuresTokenImplementation is Initializable, ERC20BurnableUpgradeab
     function snapshot() public returns (uint256) {
         _snapshot();
     }
+
+    uint256[46] private __gap;
+    
 }
