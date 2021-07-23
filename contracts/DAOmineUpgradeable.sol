@@ -351,11 +351,13 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         updatePool(_pid);
 
-        // Due to the security issue, we will transfer DVD rewards in only case of users directly deposit.
-        if (_proxy == _user && user_.lpAmount > 0) {
-            uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
-            if(pendingDVD_ > 0) {
+        uint256 pendingDVD_;
+        if (user_.lpAmount > 0) {
+            pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
+            if(pendingDVD_ > 0 && _proxy == _user) {
+                // Due to the security issue, we will transfer DVD rewards in only case of users directly deposit.
                 _safeDVDTransfer(_user, pendingDVD_);
+                pendingDVD_ = 0;
             }
         }
 
@@ -364,9 +366,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
             user_.lpAmount = user_.lpAmount.add(_amount);
         }
 
-        if (_proxy == _user) {
-            user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether);
-        }
+        user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(pendingDVD_);
 
         emit Deposit(_user, _pid, _amount);
     }
