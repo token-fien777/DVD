@@ -351,17 +351,20 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         updatePool(_pid);
 
-        if(_amount > 0) {
-            IERC20Upgradeable(pool_.lpTokenAddress).safeTransferFrom(address(_proxy), address(this), _amount);
-            user_.lpAmount = user_.lpAmount.add(_amount);
-        }
-
         // Due to the security issue, we will transfer DVD rewards in only case of users directly deposit.
         if (_proxy == _user && user_.lpAmount > 0) {
             uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
             if(pendingDVD_ > 0) {
                 _safeDVDTransfer(_user, pendingDVD_);
             }
+        }
+
+        if(_amount > 0) {
+            IERC20Upgradeable(pool_.lpTokenAddress).safeTransferFrom(address(_proxy), address(this), _amount);
+            user_.lpAmount = user_.lpAmount.add(_amount);
+        }
+
+        if (_proxy == _user) {
             user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether);
         }
 
