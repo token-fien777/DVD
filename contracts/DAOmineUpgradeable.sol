@@ -4,17 +4,19 @@
 pragma solidity 0.7.6;
 
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "./DVGToken.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/math/SafeMathUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+
+import "./DAOventuresTokenImplementation.sol";
 
 
-contract DAOstake is Ownable {
-    using SafeERC20 for IERC20;
-    using Address for address;
-    using SafeMath for uint256;
+contract DAOmineUpgradeable is OwnableUpgradeable {
+    using SafeERC20Upgradeable for IERC20Upgradeable;
+    using AddressUpgradeable for address;
+    using SafeMathUpgradeable for uint256;
 
 
     /* 
@@ -65,7 +67,7 @@ contract DAOstake is Ownable {
     address public communityWalletAddr;
 
     // DVG token 
-    DVGToken public dvg;
+    DAOventuresTokenImplementation public dvg;
 
     // Percent of DVG is distributed to treasury wallet per block: 24.5%
     uint256 public constant TREASURY_WALLET_PERCENT = 2450;
@@ -86,7 +88,7 @@ contract DAOstake is Ownable {
 
     event SetWalletAddress(address indexed treasuryWalletAddr, address indexed communityWalletAddr);
 
-    event SetDVG(DVGToken indexed dvg);
+    event SetDVG(DAOventuresTokenImplementation indexed dvg);
 
     event TransferDVGOwnership(address indexed newOwner);
 
@@ -102,15 +104,27 @@ contract DAOstake is Ownable {
 
     event EmergencyWithdraw(address indexed user, uint256 indexed poolId, uint256 amount);
 
+    /// @dev Require that the caller must be an EOA account to avoid flash loans
+    modifier onlyEOA() {
+        require(msg.sender == tx.origin, "Not EOA");
+        _;
+    }
+
+    modifier onlyContract() {
+        require(AddressUpgradeable.isContract(msg.sender), "Not a contract");
+        _;
+    }
 
     /**
      * @notice Update DVG amount per block for each period when deploying. Be careful of gas spending!
      */
-    constructor(
+    function initialize(
         address _treasuryWalletAddr,
         address _communityWalletAddr,
-        DVGToken _dvg
-    ) {
+        DAOventuresTokenImplementation _dvg
+    ) public initializer {
+        __Ownable_init();
+
         periodDVGPerBlock[1] = 30 ether;
 
         for (uint256 i = 2; i <= PERIOD_AMOUNT; i++) {
@@ -142,7 +156,7 @@ contract DAOstake is Ownable {
     /**
      * @notice Set DVG token address. Can only be called by owner
      */
-    function setDVG(DVGToken _dvg) public onlyOwner {
+    function setDVG(DAOventuresTokenImplementation _dvg) public onlyOwner {
         dvg = _dvg;
     
         emit SetDVG(dvg);
@@ -196,7 +210,7 @@ contract DAOstake is Ownable {
         Pool storage pool_ = pool[_pid];
         User storage user_ = user[_pid][_user];
         uint256 accDVGPerLP = pool_.accDVGPerLP;
-        uint256 lpSupply = IERC20(pool_.lpTokenAddress).balanceOf(address(this));
+        uint256 lpSupply = IERC20Upgradeable(pool_.lpTokenAddress).balanceOf(address(this));
 
         if (block.number > pool_.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool_.lastRewardBlock, block.number);
@@ -258,7 +272,7 @@ contract DAOstake is Ownable {
 
         uint256 totalDVG = getMultiplier(pool_.lastRewardBlock, block.number).mul(pool_.poolWeight).div(totalPoolWeight);
 
-        uint256 lpSupply = IERC20(pool_.lpTokenAddress).balanceOf(address(this));
+        uint256 lpSupply = IERC20Upgradeable(pool_.lpTokenAddress).balanceOf(address(this));
         if (lpSupply > 0) {
             uint256 dvgForPool = totalDVG.mul(POOL_PERCENT).div(10000);
 
@@ -295,27 +309,36 @@ contract DAOstake is Ownable {
      * @param _pid       Id of the pool to be deposited to
      * @param _amount    Amount of LP tokens to be deposited
      */
-    function deposit(uint256 _pid, uint256 _amount) public {
+    function deposit(uint256 _pid, uint256 _amount) external onlyEOA {
+        _deposit(msg.sender, msg.sender, _pid, _amount);
+    }
+
+    function depositByProxy(address _user, uint256 _pid, uint256 _amount) external onlyContract {
+        require(_user != address(0), "Invalid user address");
+        _deposit(msg.sender, _user, _pid, _amount);
+    }
+
+    function _deposit(address _proxy, address _user, uint256 _pid, uint256 _amount) internal {
         Pool storage pool_ = pool[_pid];
-        User storage user_ = user[_pid][msg.sender];
+        User storage user_ = user[_pid][_user];
 
         updatePool(_pid);
 
         if (user_.lpAmount > 0) {
             uint256 pendingDVG_ = user_.lpAmount.mul(pool_.accDVGPerLP).div(1 ether).sub(user_.finishedDVG);
             if(pendingDVG_ > 0) {
-                _safeDVGTransfer(msg.sender, pendingDVG_);
+                _safeDVGTransfer(_proxy, pendingDVG_);
             }
         }
 
         if(_amount > 0) {
-            IERC20(pool_.lpTokenAddress).safeTransferFrom(address(msg.sender), address(this), _amount);
+            IERC20Upgradeable(pool_.lpTokenAddress).safeTransferFrom(address(_proxy), address(this), _amount);
             user_.lpAmount = user_.lpAmount.add(_amount);
         }
 
         user_.finishedDVG = user_.lpAmount.mul(pool_.accDVGPerLP).div(1 ether);
 
-        emit Deposit(msg.sender, _pid, _amount);
+        emit Deposit(_user, _pid, _amount);
     }
 
     /** 
@@ -340,7 +363,7 @@ contract DAOstake is Ownable {
 
         if(_amount > 0) {
             user_.lpAmount = user_.lpAmount.sub(_amount);
-            IERC20(pool_.lpTokenAddress).safeTransfer(address(msg.sender), _amount);
+            IERC20Upgradeable(pool_.lpTokenAddress).safeTransfer(address(msg.sender), _amount);
         }
 
         user_.finishedDVG = user_.lpAmount.mul(pool_.accDVGPerLP).div(1 ether);
@@ -362,7 +385,7 @@ contract DAOstake is Ownable {
         user_.lpAmount = 0;
         user_.finishedDVG = 0;
 
-        IERC20(pool_.lpTokenAddress).safeTransfer(address(msg.sender), amount);
+        IERC20Upgradeable(pool_.lpTokenAddress).safeTransfer(address(msg.sender), amount);
 
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
