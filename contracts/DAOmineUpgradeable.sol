@@ -46,6 +46,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         uint256 lpAmount;     
         // Finished distributed DVDs to user
         uint256 finishedDVD;
+        // Last block number that rewards transferred to this user
+        uint256 fnishedBlock;
+        // Total amount of the received tier bonus
+        uint256 receivedTierBonus;
     }
     
 
@@ -93,11 +97,15 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     // period id => DVD amount per block of period
     mapping (uint256 => uint256) public periodDVDPerBlock;
 
+    // Bonus rate for the tiers. The denominator is 100. For ex. x0.75 is 75
+    // Tier starts from 0, tier 0 means that user doesn't have xDVD, tierBonusRate[0] should be 0.
+    uint32[] public tierBonusRate;
 
     event SetWalletAddress(address indexed treasuryWalletAddr, address indexed communityWalletAddr);
     event SetDVD(DAOventuresTokenImplementation indexed dvd);
     event SetXDVD(IxDVD indexed xdvd);
     event SetXDVDPid(uint256 xdvdpid);
+    event SetTierBonusRate(uint32[] _tierBonusRate);
     event TransferDVDOwnership(address indexed newOwner);
     event AddPool(address indexed lpTokenAddress, uint256 indexed poolWeight, uint256 indexed lastRewardBlock);
     event SetPoolWeight(uint256 indexed poolId, uint256 indexed poolWeight, uint256 totalPoolWeight);
@@ -124,7 +132,8 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         address _treasuryWalletAddr,
         address _communityWalletAddr,
         DAOventuresTokenImplementation _dvd,
-        IxDVD _xdvd
+        IxDVD _xdvd,
+        uint32[] memory _tierBonusRate
     ) public initializer {
         __Ownable_init();
 
@@ -138,6 +147,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         setDVD(_dvd);
         setXDVD(_xdvd);
+        setTierBonusRate(_tierBonusRate);
     }
 
 
@@ -161,14 +171,16 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
      * @notice Set DVD token address. Can only be called by owner
      */
     function setDVD(DAOventuresTokenImplementation _dvd) public onlyOwner {
+        require(address(_dvd) != address(0), "DVD address should not be zero address");
         dvd = _dvd;
         emit SetDVD(dvd);
     }
 
     /**
-     * @notice Set DVD token address. Can only be called by owner
+     * @notice Set xDVD token address. Can only be called by owner
      */
     function setXDVD(IxDVD _xdvd) public onlyOwner {
+        require(address(_xdvd) != address(0), "xDVD address should not be zero address");
         xdvd = _xdvd;
         emit SetXDVD(xdvd);
 
@@ -177,6 +189,14 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
             xdvdPid = _pool.pid;
             emit SetXDVDPid(xdvdPid);
         }
+    }
+
+    /**
+     * @notice Set bonus rate for tiers. Can only be called by owner
+     */
+    function setTierBonusRate(uint32[] memory _tierBonusRate) public onlyOwner {
+        tierBonusRate = _tierBonusRate;
+        emit SetTierBonusRate(tierBonusRate);
     }
 
     /**
@@ -223,9 +243,9 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     /** 
      * @notice Get pending DVD amount of user in pool
      */
-    function pendingDVD(uint256 _pid, address _user) external view returns(uint256) {
+    function pendingDVD(uint256 _pid, address _account) public view returns(uint256) {
         Pool storage pool_ = pool[_pid];
-        User storage user_ = user[_pid][_user];
+        User storage user_ = user[_pid][_account];
         uint256 accDVDPerLP = pool_.accDVDPerLP;
         uint256 lpSupply = IERC20Upgradeable(pool_.lpTokenAddress).balanceOf(address(this));
 
@@ -236,6 +256,52 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         }
 
         return user_.lpAmount.mul(accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
+    }
+
+    /** 
+     * @notice Get pending tier bonus amount of user in pool
+     */
+    function pendingTierBonus(uint256 _pid, address _account) public view returns(uint256) {
+        User storage user_ = user[_pid][_account];
+        if (user_.lpAmount == 0) return 0;
+
+        uint256 pendingDVD_ = pendingDVD(_pid, _account);
+        if (pendingDVD_ == 0) return 0;
+
+        return _pendingTierBonus(_account, user_.fnishedBlock, block.number, pendingDVD_);
+    }
+
+    /**
+     * @notice Return tier bonus over given _from to _to block. [_from, _to)
+     *
+     * @param _from         From block number (included)
+     * @param _to           To block number (exluded)
+     * @param _pendingDVD   The pending reward of _account  from _from block to _to block
+     */
+    function _pendingTierBonus(address _account, uint256 _from, uint256 _to, uint256 _pendingDVD) internal view returns(uint256) {
+        if (_from < START_BLOCK) {_from = START_BLOCK;}
+        if (_to > END_BLOCK) {_to = END_BLOCK;}
+        if (_from >= _to) return 0;
+
+        uint256 pendingBonus_;
+        uint256 pendingBlocks_ = _to.sub(_from);
+
+        while(_from < _to) {
+            (uint8 tier_, , uint256 endBlock_) = xdvd.tierAt(_account, _from);
+
+            if (tier_ < tierBonusRate.length) {
+                uint256 bonusRate_ = tierBonusRate[tier_];
+                if (0 < bonusRate_) {
+                    // blocks_t include endBlock_ block.
+                    uint256 blocks_ = (endBlock_ < END_BLOCK) ? endBlock_.add(1).sub(_from) : END_BLOCK.sub(_from);
+                    // It uses the average pending DVD per block to reduce operation.
+                    uint256 bonus_ = _pendingDVD.mul(blocks_).div(pendingBlocks_);
+                    pendingBonus_ = pendingBonus_.add(bonus_.mul(bonusRate_).div(100));
+                }
+            }
+            _from = endBlock_.add(1);
+        }
+        return pendingBonus_;
     }
 
     /** 
@@ -254,7 +320,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         uint256 lastRewardBlock = block.number > START_BLOCK ? block.number : START_BLOCK;
         totalPoolWeight = totalPoolWeight + _poolWeight;
 
-        Pool memory newPool = Pool({
+        Pool memory newPool_ = Pool({
             lpTokenAddress: _lpTokenAddress,
             poolWeight: _poolWeight,
             lastRewardBlock: lastRewardBlock,
@@ -262,13 +328,13 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
             pid: pool.length
         });
 
-        pool.push(newPool);
-        poolMap[_lpTokenAddress] = newPool;
+        pool.push(newPool_);
+        poolMap[_lpTokenAddress] = newPool_;
 
         emit AddPool(_lpTokenAddress, _poolWeight, lastRewardBlock);
 
         if (address(xdvd) == _lpTokenAddress) {
-            xdvdPid = newPool.pid;
+            xdvdPid = newPool_.pid;
             emit SetXDVDPid(xdvdPid);
         }
     }
@@ -340,25 +406,30 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         _deposit(msg.sender, msg.sender, _pid, _amount);
     }
 
-    function depositByProxy(address _user, uint256 _pid, uint256 _amount) external onlyContract {
-        require(_user != address(0), "Invalid user address");
-        _deposit(msg.sender, _user, _pid, _amount);
+    function depositByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract {
+        require(_account != address(0), "Invalid account address");
+        _deposit(msg.sender, _account, _pid, _amount);
     }
 
-    function _deposit(address _proxy, address _user, uint256 _pid, uint256 _amount) internal {
+    function _deposit(address _proxy, address _account, uint256 _pid, uint256 _amount) internal {
         Pool storage pool_ = pool[_pid];
-        User storage user_ = user[_pid][_user];
+        User storage user_ = user[_pid][_account];
 
         updatePool(_pid);
 
         uint256 pendingDVD_;
         if (user_.lpAmount > 0) {
             pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
-            if(pendingDVD_ > 0 && _proxy == _user) {
+            if(pendingDVD_ > 0 && _proxy == _account) {
                 // Due to the security issue, we will transfer DVD rewards in only case of users directly deposit.
-                _safeDVDTransfer(_user, pendingDVD_);
+                uint256 bonus_ = _pendingTierBonus(_account, user_.fnishedBlock, pool_.lastRewardBlock, pendingDVD_);
+                _safeDVDTransfer(_account, pendingDVD_.add(bonus_));
+                user_.fnishedBlock = pool_.lastRewardBlock;
+                user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
                 pendingDVD_ = 0;
             }
+        } else {
+            user_.fnishedBlock = block.number;
         }
 
         if(_amount > 0) {
@@ -368,7 +439,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(pendingDVD_);
 
-        emit Deposit(_user, _pid, _amount);
+        emit Deposit(_account, _pid, _amount);
     }
 
     /** 
@@ -388,7 +459,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
 
         if(pendingDVD_ > 0) {
-            _safeDVDTransfer(msg.sender, pendingDVD_);
+            uint256 bonus_ = _pendingTierBonus(msg.sender, user_.fnishedBlock, pool_.lastRewardBlock, pendingDVD_);
+            _safeDVDTransfer(msg.sender, pendingDVD_.add(bonus_));
+            user_.fnishedBlock = pool_.lastRewardBlock;
+            user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
         }
 
         if(_amount > 0) {
@@ -436,5 +510,5 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         }
     }
 
-    uint256[40] private __gap;
+    uint256[39] private __gap;
 }
