@@ -12,10 +12,10 @@ import "./DAOventuresTokenImplementation.sol";
 import "./interfaces/IxDVD.sol";
 
 contract DAOmineUpgradeable is OwnableUpgradeable {
-    using SafeERC20Upgradeable for IERC20Upgradeable;
     using AddressUpgradeable for address;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
+    using SafeERC20Upgradeable for DAOventuresTokenImplementation;
     using SafeMathUpgradeable for uint256;
-
 
     /* 
     Basically, any point in time, the amount of DVDs entitled to a user but is pending to be distributed is:
@@ -98,6 +98,9 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     mapping (uint256 => uint256) public periodDVDPerBlock;
 
     // Bonus rate for the tiers. The denominator is 100. For ex. x0.75 is 75
+    uint32 public constant TIER_BONUS_RATE_DENOMINATOR = 100;
+    // Maximum bonus is DVD reward x 4.
+    uint32 public constant TIER_BONUS_MAX_RATE = 400;
     // Tier starts from 0, tier 0 means that user doesn't have xDVD, tierBonusRate[0] should be 0.
     uint32[] public tierBonusRate;
 
@@ -110,9 +113,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     event AddPool(address indexed lpTokenAddress, uint256 indexed poolWeight, uint256 indexed lastRewardBlock);
     event SetPoolWeight(uint256 indexed poolId, uint256 indexed poolWeight, uint256 totalPoolWeight);
     event UpdatePool(uint256 indexed poolId, uint256 indexed lastRewardBlock, uint256 totalDVD);
-    event Deposit(address indexed user, uint256 indexed poolId, uint256 amount);
-    event Withdraw(address indexed user, uint256 indexed poolId, uint256 amount);
-    event EmergencyWithdraw(address indexed user, uint256 indexed poolId, uint256 amount);
+    event Deposit(address indexed account, uint256 indexed poolId, uint256 amount);
+    event Yield(address indexed account, uint256 indexed poolId, uint256 dvdAmount);
+    event Withdraw(address indexed account, uint256 indexed poolId, uint256 amount);
+    event EmergencyWithdraw(address indexed account, uint256 indexed poolId, uint256 amount);
 
     /// @dev Require that the caller must be an EOA account to avoid flash loans
     modifier onlyEOA() {
@@ -135,6 +139,11 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         IxDVD _xdvd,
         uint32[] memory _tierBonusRate
     ) public initializer {
+        require(_tierBonusRate.length <= 11, "Tier range is from 0 to 10");
+        for(uint i = 0; i < _tierBonusRate.length; i ++) {
+            require(_tierBonusRate[i] <= TIER_BONUS_MAX_RATE, "The maximum rate is 400");
+        }
+
         __Ownable_init();
 
         periodDVDPerBlock[1] = 30 ether;
@@ -181,6 +190,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
      */
     function setXDVD(IxDVD _xdvd) public onlyOwner {
         require(address(_xdvd) != address(0), "xDVD address should not be zero address");
+        if (address(xdvd) != address(0)) {
+            dvd.safeApprove(address(xdvd), 0);
+        }
+        dvd.safeApprove(address(_xdvd), type(uint256).max);
         xdvd = _xdvd;
         emit SetXDVD(xdvd);
 
@@ -195,6 +208,11 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
      * @notice Set bonus rate for tiers. Can only be called by owner
      */
     function setTierBonusRate(uint32[] memory _tierBonusRate) public onlyOwner {
+        require(_tierBonusRate.length <= 11, "Tier range is from 0 to 10");
+        for(uint i = 0; i < _tierBonusRate.length; i ++) {
+            require(_tierBonusRate[i] <= TIER_BONUS_MAX_RATE, "The maximum rate is 400");
+        }
+
         tierBonusRate = _tierBonusRate;
         emit SetTierBonusRate(tierBonusRate);
     }
@@ -296,7 +314,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
                     uint256 blocks_ = (endBlock_ < END_BLOCK) ? endBlock_.add(1).sub(_from) : END_BLOCK.sub(_from);
                     // It uses the average pending DVD per block to reduce operation.
                     uint256 bonus_ = _pendingDVD.mul(blocks_).div(pendingBlocks_);
-                    pendingBonus_ = pendingBonus_.add(bonus_.mul(bonusRate_).div(100));
+                    pendingBonus_ = pendingBonus_.add(bonus_.mul(bonusRate_).div(TIER_BONUS_RATE_DENOMINATOR));
                 }
             }
             _from = endBlock_.add(1);
@@ -433,7 +451,9 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         }
 
         if(_amount > 0) {
-            IERC20Upgradeable(pool_.lpTokenAddress).safeTransferFrom(address(_proxy), address(this), _amount);
+            if (address(_proxy) != address(this)) {
+                IERC20Upgradeable(pool_.lpTokenAddress).safeTransferFrom(address(_proxy), address(this), _amount);
+            }
             user_.lpAmount = user_.lpAmount.add(_amount);
         }
 
@@ -508,6 +528,37 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         } else {
             dvd.transfer(_to, _amount);
         }
+    }
+
+    /**
+     * @notice Take DVD rewards and redeposit it into xDVD pool.
+     *
+     * @param _pid       Id of the pool to be deposited to
+     */
+    function yield(uint256 _pid) external onlyEOA {
+        address account_ = msg.sender;
+        Pool storage pool_ = pool[_pid];
+        User storage user_ = user[_pid][account_];
+        require(0 < user_.lpAmount, "User should deposit on the pool before yielding");
+
+        updatePool(_pid);
+
+        uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
+        require(0 < pendingDVD_, "User should have the pending DVD rewards");
+
+        uint256 bonus_ = _pendingTierBonus(account_, user_.fnishedBlock, pool_.lastRewardBlock, pendingDVD_);
+        user_.fnishedBlock = pool_.lastRewardBlock;
+        user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
+        user_.finishedDVD = user_.finishedDVD.add(pendingDVD_);
+
+        uint256 dvdAmount_ = pendingDVD_.add(bonus_);
+        uint256 xdvdBalance_ = xdvd.balanceOf(address(this));
+        xdvd.depositByProxy(account_, dvdAmount_);
+        uint256 xdvdAmount_ = xdvd.balanceOf(address(this)).sub(xdvdBalance_);
+
+        _deposit(address(this), account_, xdvdPid, xdvdAmount_);
+
+        emit Yield(account_, _pid, dvdAmount_);
     }
 
     uint256[39] private __gap;
