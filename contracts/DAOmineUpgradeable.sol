@@ -50,6 +50,8 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         uint256 fnishedBlock;
         // Total amount of the received tier bonus
         uint256 receivedTierBonus;
+        // Timestamp of the last deposit or yield
+        uint256 lastDepositTime;
     }
     
 
@@ -104,11 +106,17 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     // Tier starts from 0, tier 0 means that user doesn't have xDVD, tierBonusRate[0] should be 0.
     uint32[] public tierBonusRate;
 
+    // Early withdrawal period in second
+    uint256 public earlyWithdrawalPenaltyPeriod;
+    // Percent of early withdrawal penalty. For example, 30 if the penalty is 30% rewards.
+    uint256 public earlyWithdrawalPenaltyPercent;
+
     event SetWalletAddress(address indexed treasuryWalletAddr, address indexed communityWalletAddr);
     event SetDVD(DAOventuresTokenImplementation indexed dvd);
     event SetXDVD(IxDVD indexed xdvd);
     event SetXDVDPid(uint256 xdvdpid);
     event SetTierBonusRate(uint32[] _tierBonusRate);
+    event SetEarlyWithdrawalPenalty(uint256 _period, uint256 _percent);
     event TransferDVDOwnership(address indexed newOwner);
     event AddPool(address indexed lpTokenAddress, uint256 indexed poolWeight, uint256 indexed lastRewardBlock);
     event SetPoolWeight(uint256 indexed poolId, uint256 indexed poolWeight, uint256 totalPoolWeight);
@@ -137,7 +145,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         address _communityWalletAddr,
         DAOventuresTokenImplementation _dvd,
         IxDVD _xdvd,
-        uint32[] memory _tierBonusRate
+        uint256 _xdvdPoolWeight,
+        uint32[] memory _tierBonusRate,
+        uint256 _earlyWithdrawalPenaltyPeriod,
+        uint256 _earlyWithdrawalPenaltyPercent
     ) public initializer {
         require(_tierBonusRate.length <= 11, "Tier range is from 0 to 10");
         for(uint i = 0; i < _tierBonusRate.length; i ++) {
@@ -156,7 +167,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         setDVD(_dvd);
         setXDVD(_xdvd);
+        addPool(address(_xdvd), _xdvdPoolWeight, false);
+
         setTierBonusRate(_tierBonusRate);
+        setEarlyWithdrawalPenalty(_earlyWithdrawalPenaltyPeriod, _earlyWithdrawalPenaltyPercent);
     }
 
 
@@ -190,6 +204,8 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
      */
     function setXDVD(IxDVD _xdvd) public onlyOwner {
         require(address(_xdvd) != address(0), "xDVD address should not be zero address");
+        require(address(dvd) != address(0), "DVD address should be already set");
+
         if (address(xdvd) != address(0)) {
             dvd.safeApprove(address(xdvd), 0);
         }
@@ -215,6 +231,19 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         tierBonusRate = _tierBonusRate;
         emit SetTierBonusRate(tierBonusRate);
+    }
+
+    /**
+     * @notice Set the period and rate of the early withdrawal penalty. Can only be called by owner
+     *
+     * @param _period       Period in second
+     * @param _percent      Percent of penalty. For example, 30 if the penalty is 30% rewards.
+     */
+    function setEarlyWithdrawalPenalty(uint256 _period, uint256 _percent) public onlyOwner {
+        require(_percent <= 100, "The rate should equal or less than 100");
+        earlyWithdrawalPenaltyPeriod = _period;
+        earlyWithdrawalPenaltyPercent = _percent;
+        emit SetEarlyWithdrawalPenalty(earlyWithdrawalPenaltyPeriod, earlyWithdrawalPenaltyPercent);
     }
 
     /**
@@ -458,6 +487,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         }
 
         user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(pendingDVD_);
+        user_.lastDepositTime = block.timestamp;
 
         emit Deposit(_account, _pid, _amount);
     }
@@ -480,6 +510,13 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         if(pendingDVD_ > 0) {
             uint256 bonus_ = _pendingTierBonus(msg.sender, user_.fnishedBlock, pool_.lastRewardBlock, pendingDVD_);
+            if (block.timestamp < user_.lastDepositTime.add(earlyWithdrawalPenaltyPeriod)) {
+                uint256 penalty_ = bonus_.mul(earlyWithdrawalPenaltyPercent).div(100);
+                if (0 < penalty_) {
+                    dvd.burn(penalty_);
+                    bonus_ = bonus_.sub(penalty_);
+                }
+            }
             _safeDVDTransfer(msg.sender, pendingDVD_.add(bonus_));
             user_.fnishedBlock = pool_.lastRewardBlock;
             user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
@@ -550,6 +587,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         user_.fnishedBlock = pool_.lastRewardBlock;
         user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
         user_.finishedDVD = user_.finishedDVD.add(pendingDVD_);
+        user_.lastDepositTime = block.timestamp;
 
         uint256 dvdAmount_ = pendingDVD_.add(bonus_);
         uint256 xdvdBalance_ = xdvd.balanceOf(address(this));
@@ -561,5 +599,5 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         emit Yield(account_, _pid, dvdAmount_);
     }
 
-    uint256[39] private __gap;
+    uint256[37] private __gap;
 }
