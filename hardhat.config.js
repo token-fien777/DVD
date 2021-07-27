@@ -10,50 +10,49 @@ require('dotenv').config();
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
 
+const apiKey = process.env.ETHERSCAN_API_KEY;
+const mainnetUrl = process.env.ALCHEMY_URL_MAINNET;
+const mainnetBlockNumber = 12910300;
+
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
 module.exports = {
-  defaultNetwork:"hardhat",
-
-  networks: {
-    kovan: {
-      url: process.env.KOVAN_URL,
-      from: process.env.ACCOUNT,
-      accounts: [`0x${process.env.PRIVATE_KEY}`]
-    },
-/*
-    mainnet: {
-      url: process.env.MAINNET_URL,
-      from: process.env.ACCOUNT,
-      accounts: [`0x${process.env.PRIVATE_KEY}`]
-    }*/
-  },
-
-  /*
-  etherscan: {
-    apikey: process.env.ETHERSCAN_API_KEY
-  },
-  */
-
   solidity: {
-    optimizer: {
-      enabled: true,
-      runs: 200
-    },
-    compilers: [
-      {
-      version: "0.7.6"
+    compilers: [{
+      version: "0.7.6",
+      settings: {
+        optimizer: {
+          enabled: true,
+          runs: 1000
+        }
       }
-    ]
+    }],
   },
-
-  mocha: {
-    timeout: 2000000  // default: 20000
+  networks: {
+    hardhat: {
+      forking: {
+        url: mainnetUrl,
+        blockNumber: mainnetBlockNumber,
+      },
+    },
+    mainnet: {
+      url: `https://mainnet.infura.io/v3/${process.env.INFURA_API_KEY}`,
+      accounts: [process.env.PRIVATE_KEY]
+    },
+    kovan: {
+      url: `https://kovan.infura.io/v3/${process.env.INFURA_API_KEY}`,
+      accounts: [process.env.PRIVATE_KEY]
+    },
   },
-
+  etherscan: {
+    apiKey: apiKey
+  },
   gasReporter: {
-    showTimeSpent: true
-  }
+    enabled: true
+  },
+  mocha: {
+    timeout: 50000
+  },
 };
 

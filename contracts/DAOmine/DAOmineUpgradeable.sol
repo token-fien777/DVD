@@ -8,13 +8,12 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
-import "./DAOventuresTokenImplementation.sol";
-import "./interfaces/IxDVD.sol";
+import "../DAOventuresTokenImplementation.sol";
+import "../interfaces/IxDVD.sol";
 
 contract DAOmineUpgradeable is OwnableUpgradeable {
     using AddressUpgradeable for address;
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using SafeERC20Upgradeable for DAOventuresTokenImplementation;
     using SafeMathUpgradeable for uint256;
 
     /* 
@@ -59,9 +58,9 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     END_BLOCK = START_BLOCK + BLOCK_PER_PERIOD * PERIOD_AMOUNT 
     */
     // First block that DAOstake will start from
-    uint256 public constant START_BLOCK = 0;
+    uint256 public START_BLOCK = 0;
     // First block that DAOstake will end from
-    uint256 public constant END_BLOCK = 0;
+    uint256 public END_BLOCK = 0;
     // Amount of block per period: 6500(blocks per day) * 14(14 days/2 weeks) = 91000
     uint256 public constant BLOCK_PER_PERIOD = 91000;
     // Amount of period
@@ -148,7 +147,8 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         uint256 _xdvdPoolWeight,
         uint32[] memory _tierBonusRate,
         uint256 _earlyWithdrawalPenaltyPeriod,
-        uint256 _earlyWithdrawalPenaltyPercent
+        uint256 _earlyWithdrawalPenaltyPercent,
+        uint256 _startBlock
     ) public initializer {
         require(_tierBonusRate.length <= 11, "Tier range is from 0 to 10");
         for(uint i = 0; i < _tierBonusRate.length; i ++) {
@@ -157,8 +157,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         __Ownable_init();
 
-        periodDVDPerBlock[1] = 30 ether;
+        START_BLOCK = _startBlock;
+        END_BLOCK = BLOCK_PER_PERIOD.mul(PERIOD_AMOUNT).add(_startBlock);
 
+        periodDVDPerBlock[1] = 30 ether;
         for (uint256 i = 2; i <= PERIOD_AMOUNT; i++) {
             periodDVDPerBlock[i] = periodDVDPerBlock[i.sub(1)].mul(9650).div(10000);
         }
@@ -207,9 +209,9 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         require(address(dvd) != address(0), "DVD address should be already set");
 
         if (address(xdvd) != address(0)) {
-            dvd.safeApprove(address(xdvd), 0);
+            dvd.approve(address(xdvd), 0);
         }
-        dvd.safeApprove(address(_xdvd), type(uint256).max);
+        dvd.approve(address(_xdvd), type(uint256).max);
         xdvd = _xdvd;
         emit SetXDVD(xdvd);
 
@@ -599,5 +601,5 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         emit Yield(account_, _pid, dvdAmount_);
     }
 
-    uint256[37] private __gap;
+    uint256[35] private __gap;
 }
