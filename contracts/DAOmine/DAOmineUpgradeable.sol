@@ -10,8 +10,9 @@ import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 import "../DAOventuresTokenImplementation.sol";
 import "../interfaces/IxDVD.sol";
+import "../interfaces/IDAOmine.sol";
 
-contract DAOmineUpgradeable is OwnableUpgradeable {
+contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
     using AddressUpgradeable for address;
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using SafeMathUpgradeable for uint256;
@@ -52,7 +53,6 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         // Timestamp of the last deposit or yield
         uint256 lastDepositTime;
     }
-    
 
     /* 
     END_BLOCK = START_BLOCK + BLOCK_PER_PERIOD * PERIOD_AMOUNT 
@@ -455,7 +455,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         _deposit(msg.sender, msg.sender, _pid, _amount);
     }
 
-    function depositByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract {
+    function depositByProxy(address _account, uint256 _pid, uint256 _amount) external override onlyContract {
         require(_account != address(0), "Invalid account address");
         _deposit(msg.sender, _account, _pid, _amount);
     }
