@@ -14,7 +14,7 @@ module.exports = {
       tokenAddress: "0x1193c036833B0010fF80a3617BBC94400A284338",  // TODO: Update after DVD deployed on Mainnet
     },
     DAOmine: {
-      startBlock: 12910300,  // TODO: Update with correct value. First block that DAOstake will start from
+      startBlock: 12910350,  // TODO: Update with correct value. First block that DAOstake will start from
       xdvdPoolWeight: 200,
       tierBonusRate: [0, 20, 30, 50],  // Tier multiplier: 1x(no xDVD), 1.2x, 1.3x, 1.5x
       earlyWithdrawalPenaltyPeriod: 259200,  // 3 days in second
