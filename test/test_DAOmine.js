@@ -91,27 +91,27 @@ contract("DAOmine", async () => {
         assert.equal(await dvd.owner(), daoMine.address, "The owner of DVD should be DAOmine");
     });
 
-    // it("Should succeed to do setups", async () => {
-    //     tx = await daoMine.setWalletAddress(accounts[1], accounts[2]);
-    //     await expectEvent(tx, "SetWalletAddress", {treasuryWalletAddr:accounts[1], communityWalletAddr:accounts[2]});
-    //     assert.equal(await daoMine.treasuryWalletAddr(), accounts[1], "The Treasury wallet address of DAOmine disagreement");
-    //     assert.equal(await daoMine.communityWalletAddr(), accounts[2], "The Community wallet address of DAOmine disagreement");
+    it("Should succeed to do setups", async () => {
+        tx = await daoMine.setWalletAddress(a1.address, a2.address);
+        await expectEvent(tx, "SetWalletAddress", {treasuryWalletAddr:a1.address, communityWalletAddr:a2.address});
+        assert.equal(await daoMine.treasuryWalletAddr(), a1.address, "The Treasury wallet address of DAOmine disagreement");
+        assert.equal(await daoMine.communityWalletAddr(), a2.address, "The Community wallet address of DAOmine disagreement");
         
-    //     tx = await daoMine.setDVG(lpToken1.address);
-    //     await expectEvent(tx, "SetDVG", {dvg:lpToken1.address});
-    //     assert.equal(await daoMine.dvg(), lpToken1.address, "The DVG address of DAOmine disagreement");
+        tx = await daoMine.setDVD(lpToken1.address);
+        await expectEvent(tx, "setDVD", {dvd:lpToken1.address});
+        assert.equal(await daoMine.dvd(), lpToken1.address, "The DVG address of DAOmine disagreement");
 
-    //     // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
-    //     await daoMine.addPool(lpToken1.address, 1, true);
-    //     await daoMine.addPool(lpToken2.address, 2, true);
-    //     await daoMine.addPool(lpToken3.address, 3, true);
-    //     await daoMine.addPool(lpToken4.address, 4, true);
+        // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
+        await daoMine.addPool(lpToken1.address, 1, true);
+        await daoMine.addPool(lpToken2.address, 2, true);
+        await daoMine.addPool(lpToken3.address, 3, true);
+        await daoMine.addPool(lpToken4.address, 4, true);
 
-    //     tx = await daoMine.setPoolWeight(0, 2, false);
-    //     await expectEvent(tx, "SetPoolWeight", {poolId:"0", poolWeight:"2", totalPoolWeight:"11"});
-    //     assert.equal((await daoMine.pool(0)).poolWeight, 2, "The pool weight of pool 0 disagreement");
-    //     assert.equal(await daoMine.totalPoolWeight(), 11, "The total weight of DAOmine disagreement");
-    // });
+        tx = await daoMine.setPoolWeight(0, 2, false);
+        await expectEvent(tx, "SetPoolWeight", {poolId:"0", poolWeight:"2", totalPoolWeight:"11"});
+        assert.equal((await daoMine.pool(0)).poolWeight, 2, "The pool weight of pool 0 disagreement");
+        assert.equal(await daoMine.totalPoolWeight(), 11, "The total weight of DAOmine disagreement");
+    });
 
 
     // it("Should succeed to transfer DVG ownership", async () => {
