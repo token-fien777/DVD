@@ -13,18 +13,11 @@ const LPTokenMockup = artifacts.require("LPTokenMockup");
 
 const { mainnet: network_ } = require("../parameters");
 
-/*
- * Here the constant variables settings in DAOmine smart contract for the test:
- * uint256 public constant START_BLOCK = 200;
- * uint256 public constant END_BLOCK = 210;
- * uint256 public constant BLOCK_PER_PERIOD = 2;
- * uint256 public constant PERIOD_AMOUNT = 5;
- */ 
 contract("DAOmine", async () => {
     let daoMine;
     let daoMineArtifact;
     let dvd, xdvd;
-    let dvdOwner, user;
+    let dvdOwner;
     let lpToken1, lpToken2, lpToken3, lpToken4;
 
     before(async () => {
@@ -33,7 +26,6 @@ contract("DAOmine", async () => {
         daoMineArtifact = await deployments.getArtifact("DAOmineUpgradeable");
     
         dvdOwner = await ethers.getSigner(network_.DVD.ownerAddress);
-        user = await ethers.getSigner(network_.DVD.vaultAddress);
         dvd = new ethers.Contract(network_.DVD.tokenAddress, DAOventuresTokenImplementation.abi, deployer);
         xdvd = new ethers.Contract(network_.xDVD.tokenAddress, IxDVD.abi, deployer);
     });
@@ -268,15 +260,15 @@ contract("DAOmine", async () => {
         await daoMine.addPool(lpToken4.address, 200, true);
 
         // 2 users deposit LP token 1 (user 1 -> 0.5, user 2 -> 1)
-        await lpToken1.approve(daoMine.address, new BN("500000000000000000"), {from:a1.address});
-        await daoMine.connect(a1).deposit(1, "500000000000000000");
-        await lpToken1.approve(daoMine.address, new BN("1000000000000000000"), {from:a2.address});
-        await daoMine.connect(a2).deposit(1, "1000000000000000000");
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther("0.5"), {from:a1.address});
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther("1"), {from:a2.address});
+        await daoMine.connect(a2).deposit(1, ethers.utils.parseEther("1"));
 
         // 5 users deposit LP token 2 (user 1 -> 0.5, user 2 -> 1, user 3 -> 1.5, user 4 -> 2, user 5 -> 2.5)
         for (i = 0; i < 5; i++) {
-            await lpToken2.approve(daoMine.address, new BN((500000000000000000 * i).toString()), {from:accounts[i].address});
-            await daoMine.connect(accounts[i]).deposit(2, (500000000000000000 * i).toString());
+            await lpToken2.approve(daoMine.address, (parseInt(ethers.utils.parseEther("0.5")) * i).toString(), {from:accounts[i].address});
+            await daoMine.connect(accounts[i]).deposit(2, (parseInt(ethers.utils.parseEther("0.5")) * i).toString());
         }
 
         await advanceBlockTo(await daoMine.START_BLOCK());
@@ -301,5 +293,13 @@ contract("DAOmine", async () => {
         // 30(dvgPerBlock) * 51%(poolPercent) * (100/800)(pool3Weight/totalWeight) + 
         // 30(dvgPerBlock) * 51%(poolPercent) * (200/800)(pool4Weight/totalWeight) = 5.7375
         assert.equal((await dvd.balanceOf(daoMine.address)).toString(), ethers.utils.parseEther("5.7375"), "The DAOmine should have correct balance of DVD"); 
+
+        for (i = 0; i < 5; i++) {
+            assert.equal(await dvd.balanceOf(accounts[i].address), 0, `Should not mint and distribute DVDs to user ${i} if no deposit or withdrawal`);
+        }
+
+        // pending DVG amount for user 1 from pool 1:
+        // 30(dvgPerBlock) * 51%(poolPercent) * (100/800)(pool3Weight/totalWeight) * (0.5/1.5)(share/totalShare) = 0.6375
+        assert.equal((await daoMine.pendingDVD(1, a1.address)).toString(), ethers.utils.parseEther("0.6375"), "The user 1 should have correct pending DVD amount in DAOmine");
     });
 });

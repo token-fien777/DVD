@@ -4,7 +4,6 @@ const { mainnet: network_ } = require("../../parameters");
 module.exports = async () => {
 
   await network.provider.request({method: "hardhat_impersonateAccount", params: [network_.DVD.ownerAddress]});
-  await network.provider.request({method: "hardhat_impersonateAccount", params: [network_.DVD.vaultAddress]});
 };
 
 module.exports.tags = ["hardhat"];

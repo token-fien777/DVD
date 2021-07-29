@@ -26,6 +26,7 @@ module.exports = async ({ deployments }) => {
       network_.DAOmine.startBlock,
   ]);
 
+  console.log("Now deploying DAOmineUpgradeableProxy on Mainnet...");
   const proxy = await deploy("DAOmineUpgradeableProxy", {
     from: deployer.address,
     args: [
