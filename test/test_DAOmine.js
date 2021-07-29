@@ -1,11 +1,12 @@
 const {balance, BN, constants, ether, expectEvent, expectRevert, send, time} = require("@openzeppelin/test-helpers");
-const { assert, ethers, deployments, artifacts } = require("hardhat");
+const { assert, expect, ethers, deployments, artifacts } = require("hardhat");
 // const {Decimal} = require("decimal.js");
 const { BigNumber } = require('bignumber.js');
 BigNumber.config({
   EXPONENTIAL_AT: 1e+9,
   ROUNDING_MODE: BigNumber.ROUND_FLOOR,
 })
+const { advanceBlockTo } = require('./utils/Ethereum');
 
 const IxDVD = artifacts.require("IxDVD");
 const DAOventuresTokenImplementation = artifacts.require("DAOventuresTokenImplementation");
@@ -25,7 +26,7 @@ contract("DAOmine", async () => {
     let daoMineArtifact;
     let dvd, xdvd;
     let dvdOwner, user;
-    let lpToken1, lpToken2, lpToken3, lpToken4, tx;
+    let lpToken1, lpToken2, lpToken3, lpToken4;
 
     before(async () => {
         [deployer, a1, a2, ...accounts] = await ethers.getSigners();
@@ -63,6 +64,7 @@ contract("DAOmine", async () => {
 
 
     it("Should be set with correct initial vaule", async () => {
+        expect(await daoMine.owner()).equal(deployer.address);
         assert.equal(await daoMine.treasuryWalletAddr(), network_.Global.treasuryWalletAddr, "The Treasury wallet address disagreement");
         assert.equal(await daoMine.communityWalletAddr(), network_.Global.communityWalletAddr, "The Community wallet address disagreement");
         assert.equal(await daoMine.dvd(), dvd.address, "The DVD address disagreement");
@@ -92,61 +94,79 @@ contract("DAOmine", async () => {
     });
 
     it("Should succeed to do setups", async () => {
-        tx = await daoMine.setWalletAddress(a1.address, a2.address);
-        await expectEvent(tx, "SetWalletAddress", {treasuryWalletAddr:a1.address, communityWalletAddr:a2.address});
+        await daoMine.connect(deployer).setWalletAddress(a1.address, a2.address);
         assert.equal(await daoMine.treasuryWalletAddr(), a1.address, "The Treasury wallet address of DAOmine disagreement");
         assert.equal(await daoMine.communityWalletAddr(), a2.address, "The Community wallet address of DAOmine disagreement");
         
-        tx = await daoMine.setDVD(lpToken1.address);
-        await expectEvent(tx, "setDVD", {dvd:lpToken1.address});
-        assert.equal(await daoMine.dvd(), lpToken1.address, "The DVG address of DAOmine disagreement");
-
         // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
-        await daoMine.addPool(lpToken1.address, 1, true);
-        await daoMine.addPool(lpToken2.address, 2, true);
-        await daoMine.addPool(lpToken3.address, 3, true);
-        await daoMine.addPool(lpToken4.address, 4, true);
+        await daoMine.connect(deployer).addPool(lpToken1.address, 1, true);
+        await daoMine.connect(deployer).addPool(lpToken2.address, 2, true);
+        await daoMine.connect(deployer).addPool(lpToken3.address, 3, true);
+        await daoMine.connect(deployer).addPool(lpToken4.address, 4, true);
+        assert.equal(await daoMine.poolLength(), 5, "xDVD pool is not added by default");
 
-        tx = await daoMine.setPoolWeight(0, 2, false);
-        await expectEvent(tx, "SetPoolWeight", {poolId:"0", poolWeight:"2", totalPoolWeight:"11"});
+        await daoMine.connect(deployer).setPoolWeight(0, 2, false);
+        // await expectEvent(tx, "SetPoolWeight", {poolId:"0", poolWeight:"2", totalPoolWeight:"11"});
         assert.equal((await daoMine.pool(0)).poolWeight, 2, "The pool weight of pool 0 disagreement");
-        assert.equal(await daoMine.totalPoolWeight(), 11, "The total weight of DAOmine disagreement");
+        assert.equal(await daoMine.totalPoolWeight(), 12, "The total weight of DAOmine disagreement");
+
+        await daoMine.connect(deployer).setDVD(lpToken1.address);
+        assert.equal(await daoMine.dvd(), lpToken1.address, "The DVD address of DAOmine disagreement");
+
+        await daoMine.connect(deployer).setXDVD(lpToken2.address);
+        assert.equal(await daoMine.xdvd(), lpToken2.address, "The xDVD address disagreement");
+        assert.equal(await daoMine.xdvdPid(), 2, "xdvdPid is incorrect");
+
+        await daoMine.connect(deployer).setTierBonusRate([0, 100, 200, 300, 400]);
+        assert.equal(await daoMine.tierBonusRate(0), 0, `tierBonusRate(0) is incorrect`);
+        assert.equal(await daoMine.tierBonusRate(1), 100, `tierBonusRate(1) is incorrect`);
+        assert.equal(await daoMine.tierBonusRate(2), 200, `tierBonusRate(2) is incorrect`);
+        assert.equal(await daoMine.tierBonusRate(3), 300, `tierBonusRate(3) is incorrect`);
+        assert.equal(await daoMine.tierBonusRate(4), 400, `tierBonusRate(4) is incorrect`);
+
+        await daoMine.connect(deployer).setEarlyWithdrawalPenalty(10000, 20);
+        assert.equal(await daoMine.earlyWithdrawalPenaltyPeriod(), 10000, "earlyWithdrawalPenaltyPeriod is incorrect");
+        assert.equal(await daoMine.earlyWithdrawalPenaltyPercent(), 20, "earlyWithdrawalPenaltyPercent is incorrect");
     });
 
+    it("Should succeed to transfer DVD ownership", async () => {
+        await daoMine.connect(deployer).transferDVDOwnership(a1.address);
+        assert.equal(await dvd.owner(), a1.address, "The owner of DVD should be changed");
+    });
 
-    // it("Should succeed to transfer DVG ownership", async () => {
-    //     tx = await daoMine.transferDVGOwnership(accounts[1]);
-    //     await expectEvent(tx, "TransferDVGOwnership", {newOwner:accounts[1]});
-    // });
- 
-    
-    // it("Should succeed to add new pools", async () => {
-    //     assert.equal(await daoMine.totalPoolWeight(), 0, "DAOmine should have 0 pool weight when init");
+    it("Should succeed to add new pools", async () => {
+        // add a new pool (pool 1 -> LP token 1, pool weight 1)
+        tx = await daoMine.connect(deployer).addPool(lpToken1.address, 1, true);
+        assert.equal(await daoMine.poolLength(), 2, "DAOmine should have 2 pool");
+        assert.equal(await daoMine.totalPoolWeight(), 201, "Stake smart contract should have 201 pool weight totally");
 
-    //     // add a new pool (pool 0 -> LP token 1, pool weight 1)
-    //     tx = await daoMine.addPool(lpToken1.address, 1, true);
-    //     expectEvent(tx, "AddPool", {lpTokenAddress:lpToken1.address, poolWeight:"1", lastRewardBlock:await daoMine.START_BLOCK()});
-    //     assert.equal(await daoMine.poolLength(), 1, "DAOmine should have 1 pool");
-    //     assert.equal(await daoMine.totalPoolWeight(), 1, "Stake smart contract should have 1 pool weight totally");
+        const pool1 = await daoMine.pool(1);
+        assert.equal(pool1["lpTokenAddress"], lpToken1.address, "The pool 1 should have correct LP token");
+        assert.equal(pool1["poolWeight"], 1, "The pool 1 should have 1 pool weight");
+        assert.equal(pool1["lastRewardBlock"], (await daoMine.START_BLOCK()).toString(), "The pool 1 should have correct lastRewardBlock");
+        assert.equal(pool1["accDVGPerLP"], 0, "The pool 1 should have 0 accDVGPerLP");
 
-    //     const pool0 = await daoMine.pool(0);
-    //     assert.equal(pool0["lpTokenAddress"], lpToken1.address, "The pool 0 should have correct LP token");
-    //     assert.equal(pool0["poolWeight"], 1, "The pool 0 should have 1 pool weight");
-    //     assert.equal(pool0["lastRewardBlock"], (await daoMine.START_BLOCK()).toString(), "The pool 0 should have correct lastRewardBlock");
-    //     assert.equal(pool0["accDVGPerLP"], 0, "The pool 0 should have 0 accDVGPerLP");
+        const _pool1 = await daoMine.poolMap(lpToken1.address);
+        expect(_pool1["lpTokenAddress"]).equal(lpToken1.address);
 
-    //     // add a new pool (pool 1 -> LP token 2, pool weight 2)
-    //     tx = await daoMine.addPool(lpToken2.address, 2, true);
-    //     expectEvent(tx, "AddPool", {lpTokenAddress:lpToken2.address, poolWeight:"2", lastRewardBlock:await daoMine.START_BLOCK()});
-    //     assert.equal(await daoMine.poolLength(), 2, "DAOmine should have 2 pools");
-    //     assert.equal(await daoMine.totalPoolWeight(), 3, "Stake smart contract should have 3 pool weights totally");
+        // add a new pool (pool 1 -> LP token 2, pool weight 2)
+        tx = await daoMine.connect(deployer).addPool(lpToken2.address, 2, true);
+        expectEvent(tx, "AddPool", {lpTokenAddress:lpToken2.address, poolWeight:"2", lastRewardBlock:await daoMine.START_BLOCK()});
+        assert.equal(await daoMine.poolLength(), 3, "DAOmine should have 3 pools");
+        assert.equal(await daoMine.totalPoolWeight(), 203, "Stake smart contract should have 203 pool weights totally");
 
-    //     const pool1 = await daoMine.pool(1);
-    //     assert.equal(pool1["lpTokenAddress"], lpToken2.address, "The pool 1 should have correct LP token");
-    //     assert.equal(pool1["poolWeight"], 2, "The pool 1 should have 1 pool weight");
-    //     assert.equal(pool1["lastRewardBlock"], (await daoMine.START_BLOCK()).toString(), "The pool 1 should have correct lastRewardBlock");
-    //     assert.equal(pool1["accDVGPerLP"], 0, "The pool 1 should have 0 accDVGPerLP");
-    // });
+        const pool2 = await daoMine.pool(2);
+        assert.equal(pool2["lpTokenAddress"], lpToken2.address, "The pool 2 should have correct LP token");
+        assert.equal(pool2["poolWeight"], 2, "The pool 2 should have 1 pool weight");
+        assert.equal(pool2["lastRewardBlock"], (await daoMine.START_BLOCK()).toString(), "The pool 1 should have correct lastRewardBlock");
+        assert.equal(pool2["accDVGPerLP"], 0, "The pool 2 should have 0 accDVGPerLP");
+
+        const _pool2 = await daoMine.poolMap(lpToken2.address);
+        expect(_pool2["lpTokenAddress"]).equal(lpToken2.address);
+
+        await expectRevert(await daoMine.connect(deployer).addPool(xdvd.address, 1, true), "LP token already added");
+        await expectRevert(await daoMine.connect(deployer).addPool(a1.address, 1, true), "LP token address should be smart contract address");
+    });
 
 
     // it("Should succeed to deposit", async () => {
@@ -280,11 +300,11 @@ contract("DAOmine", async () => {
         
     //     // DVG amount for Community wallet: because pool 3 and pool 4 have no user/LP token, so the DVGs distribuited to them will be distributed to Community wallet 
     //     // 20(dvgPerBlock) * 24.5%(communityWalletPercent) + 
-    //     // 20(dvgPerBlock) * 51%(poolPercent) * (3/10)(pool2Weight/totalWeight) + 
-    //     // 20(dvgPerBlock) * 51%(poolPercent) * (4/10)(pool3Weight/totalWeight) = 12.04
+    //     // 20(dvgPerBlock) * 51%(poolPercent) * (3/10)(pool3Weight/totalWeight) + 
+    //     // 20(dvgPerBlock) * 51%(poolPercent) * (4/10)(pool4Weight/totalWeight) = 12.04
     //     assert.equal((await dvg.balanceOf(communityWallet.address)).toString(), new BN("12040000000000000000"), "The Community wallet should have correct balance of DVG");
 
-    //     // DVG amount for pool: 20(dvgPerBlock) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) + 20(dvgPerBlock) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) = 3.06
+    //     // DVG amount for pool: 20(dvgPerBlock) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) + 20(dvgPerBlock) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) = 3.06
     //     assert.equal((await dvg.balanceOf(daoMine.address)).toString(), new BN("3060000000000000000"), "The DAOmine should have correct balance of DVG"); 
 
     //     await time.advanceBlockTo(parseInt(await daoMine.START_BLOCK()) + 3);
@@ -294,38 +314,38 @@ contract("DAOmine", async () => {
     //     }
 
     //     // pending DVG amount for user 1 from pool 0:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) +
-    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) = 1.0132
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) +
+    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) = 1.0132
     //     // pending DVG amount for user 1 from pool 1:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) +
-    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) = 0.40528
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) +
+    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) = 0.40528
     //     // total pending DVG amount for user 1:
     //     // 1.0132(amount from pool 0) + 0.40528(amount from pool 1) = 1.41848
     //     assert.equal(Decimal.add((await daoMine.pendingDVD(0, accounts[1])).toString()/1e18, (await daoMine.pendingDVD(1, accounts[1])).toString()/1e18), 1.41848, "The user 1 should have correct pending DVG amount in DAOmine");
 
     //     // pending DVG amount for user 2 from pool 0:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (1/1.5)(lpToken/totalLPToken) +
-    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (1/1.5)(lpToken/totalLPToken) = 2.0264
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) * (1/1.5)(lpToken/totalLPToken) +
+    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) * (1/1.5)(lpToken/totalLPToken) = 2.0264
     //     // pending DVG amount for user 2 from pool 1:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (1/7.5)(lpToken/totalLPToken) +
-    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (1/7.5)(lpToken/totalLPToken) = 0.81056
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (1/7.5)(lpToken/totalLPToken) +
+    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (1/7.5)(lpToken/totalLPToken) = 0.81056
     //     // total pending DVG amount for user 2:
     //     // 2.0264(amount from pool 0) + 0.81056(amount from pool 1) = 2.83696
     //     assert.equal(Decimal.add((await daoMine.pendingDVD(0, accounts[2])).toString()/1e18, (await daoMine.pendingDVD(1, accounts[2])).toString()/1e18), 2.83696, "The user 2 should have correct pending DVG amount in DAOmine");
         
     //     // pending DVG amount for user 3 from pool 1:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (1.5/7.5)(lpToken/totalLPToken) +
-    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (1.5/7.5)(lpToken/totalLPToken) = 1.21584
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (1.5/7.5)(lpToken/totalLPToken) +
+    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (1.5/7.5)(lpToken/totalLPToken) = 1.21584
     //     assert.equal((await daoMine.pendingDVD(1, accounts[3])).toString()/1e18, 1.21584, "The user 3 should have correct pending DVG amount in DAOmine");
 
     //     // pending DVG amount for user 4 from pool 1:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (2/7.5)(lpToken/totalLPToken) +
-    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (2/7.5)(lpToken/totalLPToken) = 1.62112
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (2/7.5)(lpToken/totalLPToken) +
+    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (2/7.5)(lpToken/totalLPToken) = 1.62112
     //     assert.equal((await daoMine.pendingDVD(1, accounts[4])).toString()/1e18, 1.62112, "The user 4 should have correct pending DVG amount in DAOmine");
 
     //     // pending DVG amount for user 5 from pool 1:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (2.5/7.5)(lpToken/totalLPToken) +
-    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (2.5/7.5)(lpToken/totalLPToken) = 2.0264
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (2.5/7.5)(lpToken/totalLPToken) +
+    //     // 1(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (2.5/7.5)(lpToken/totalLPToken) = 2.0264
     //     assert.equal((await daoMine.pendingDVD(1, accounts[5])).toString()/1e18, 2.0264, "The user 5 should have correct pending DVG amount in DAOmine");
 
     //     // check the lastRewardBlock number of each pool
@@ -335,17 +355,17 @@ contract("DAOmine", async () => {
     //     tx = await daoMine.deposit(0, 0, {from:accounts[1]});
     //     expectEvent(tx, "Deposit", {user:accounts[1], poolId:"0", amount:"0"});
     //     // DVG amount for user 1 from pool 0:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) +
-    //     // 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) = 1.3464
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) +
+    //     // 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) = 1.3464
     //     assert.equal((await dvg.balanceOf(accounts[1])).toString()/1e18, 1.3464, "Should mint and distribute DVGs to user 1 properly if he dposits to pool 0");
     //     assert.equal(((await daoMine.user(0, accounts[1])).finishedDVG).toString()/1e18, 1.3464, "User 1 should have correct finished DVG amount in pool 0");
 
     //     tx = await daoMine.withdraw(1, new BN("500000000000000000"), {from:accounts[1]});
     //     expectEvent(tx, "Withdraw", {user:accounts[1], poolId:"1", amount:new BN("500000000000000000")});
     //     // DVG amount for user 1 from pool 1:
-    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) +
-    //     // 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) + 
-    //     // 1(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) = 0.6691744
+    //     // 2(blockLength) * 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) +
+    //     // 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) + 
+    //     // 1(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * (0.5/7.5)(lpToken/totalLPToken) = 0.6691744
     //     // 0.6691744(amount from pool 1) + 1.3464(amount from pool 0) = 2.0155744
     //     assert.equal((await dvg.balanceOf(accounts[1])).toString()/1e18, 2.0155744, "Should mint and distribute DVGs to user 1 properly if he withdraws from pool 1");
     //     assert.equal(((await daoMine.user(1, accounts[1])).finishedDVG).toString()/1e18, 0, "User 1 should have correct finished DVG amount in pool 1");
@@ -354,38 +374,38 @@ contract("DAOmine", async () => {
     //     assert.equal((await dvg.balanceOf(accounts[1])).toString()/1e18, 2.0155744, "Should not mint and distribute more DVGs to user 1 because he has withdrawn all from pool 1");
         
     //     // pending DVG amount for user 1 in the third period from pool 0:
-    //     // 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 51%(poolPercent) * (1/10)(pool0Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) = 0.653072
+    //     // 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 51%(poolPercent) * (1/10)(pool1Weight/totalWeight) * (0.5/1.5)(lpToken/totalLPToken) = 0.653072
     //     assert.equal((await daoMine.pendingDVD(0, accounts[1])).toString()/1e18, 0.653072, "The user 1 should have correct pending DVG amount from pool 0 in DAOmine");
 
     //     for (i = 2; i <= 5; i++) {
     //         assert.equal((await dvg.balanceOf(accounts[i])).toString()/1e18, 0, `Should not mint and distribute DVGs to user ${i} if no deposit or withdrawal`);
     //         assert.equal((await dvg.balanceOf(accounts[i])).toString()/1e18, 0, `The finished DVG amount of user ${i} should be zero`);
-    //         // 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * 0.5 * i * (2 * 1 + 2 * 98% + 98% * 98%) / 7.5 
-    //         // + 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool1Weight/totalWeight) * 0.5 * i * 98% * 98% / 7 = 0.8091184 * i
+    //         // 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * 0.5 * i * (2 * 1 + 2 * 98% + 98% * 98%) / 7.5 
+    //         // + 20(dvgPerBlockOfPeriod1) * 51%(poolPercent) * (2/10)(pool2Weight/totalWeight) * 0.5 * i * 98% * 98% / 7 = 0.8091184 * i
     //         assert.equal((await daoMine.pendingDVD(1, accounts[i])).toString()/1e18, (8091184 * i)/1e7, `The user ${i} should have correct pending DVG amount from pool 1 in DAOmine`);
     //     }
 
     //     // DVG amount for Treasury wallet:
-    //     // pool 0: 20(dvgPerBlockOfPeriod1) * 24.5%(treasuryWalletPercent) * (1/10)(pool0Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(treasuryWalletPercent) * (1/10)(pool0Weight/totalWeight) = 1.4504
-    //     // pool 1: 20(dvgPerBlockOfPeriod1) * 24.5%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 24.5%(treasuryWalletPercent) * (2/10)(pool1Weight/totalWeight) = 4.783184
+    //     // pool 0: 20(dvgPerBlockOfPeriod1) * 24.5%(treasuryWalletPercent) * (1/10)(pool1Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(treasuryWalletPercent) * (1/10)(pool1Weight/totalWeight) = 1.4504
+    //     // pool 1: 20(dvgPerBlockOfPeriod1) * 24.5%(treasuryWalletPercent) * (2/10)(pool2Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(treasuryWalletPercent) * (2/10)(pool2Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 24.5%(treasuryWalletPercent) * (2/10)(pool2Weight/totalWeight) = 4.783184
     //     // 14.9 + 1.4504 + 4.783184 = 21.133584
     //     assert.equal((await dvg.balanceOf(network_.Global.treasuryWalletAddr)).toString(), new BN("21133584000000000000"), "The Treasury wallet should have correct balance of DVG");
 
     //     tx = await daoMine.updatePool(2);
     //     expectEvent(tx, "UpdatePool", {poolId:"2", lastRewardBlock:(parseInt(await daoMine.START_BLOCK()) + 7).toString(), totalDVG:new BN("34931952000000000000")});
     //     // DVG amount for Community wallet:
-    //     // pool 0: 20(dvgPerBlockOfPeriod1) * 24.5%(communityWalletPercent) * (1/10)(pool0Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(communityWalletPercent) * (1/10)(pool0Weight/totalWeight) = 1.4504
-    //     // pool 1: 20(dvgPerBlockOfPeriod1) * 24.5%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 24.5%(communityWalletPercent) * (2/10)(pool1Weight/totalWeight) = 4.783184
-    //     // pool 2: 20(dvgPerBlockOfPeriod1) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) 
-    //     // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight)
-    //     // + 18.82384(dvgPerBlockOfPeriod4) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool2Weight/totalWeight) = 26.37362376
+    //     // pool 0: 20(dvgPerBlockOfPeriod1) * 24.5%(communityWalletPercent) * (1/10)(pool1Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(communityWalletPercent) * (1/10)(pool1Weight/totalWeight) = 1.4504
+    //     // pool 1: 20(dvgPerBlockOfPeriod1) * 24.5%(communityWalletPercent) * (2/10)(pool2Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * 24.5%(communityWalletPercent) * (2/10)(pool2Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * 24.5%(communityWalletPercent) * (2/10)(pool2Weight/totalWeight) = 4.783184
+    //     // pool 2: 20(dvgPerBlockOfPeriod1) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool3Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.6(dvgPerBlockOfPeriod2) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool3Weight/totalWeight) 
+    //     // + 2(blockLength) * 19.208(dvgPerBlockOfPeriod3) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool3Weight/totalWeight)
+    //     // + 18.82384(dvgPerBlockOfPeriod4) * (24.5%(communityWalletPercent) + 51%(poolPercent)) * (3/10)(pool3Weight/totalWeight) = 26.37362376
     //     // 12.04 + 1.4504 + 4.783184 + 26.37362376 = 44.64720776
     //     assert.equal((await dvg.balanceOf(communityWallet.address)).toString(), new BN("44647207760000000000"), "The Community wallet should have correct balance of DVG");
     // });
