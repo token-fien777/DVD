@@ -6,6 +6,7 @@ require("@nomiclabs/hardhat-etherscan");
 require("hardhat-deploy");
 require("hardhat-deploy-ethers");
 require('@openzeppelin/hardhat-upgrades');
+require("hardhat-gas-reporter");
 
 require('dotenv').config();
 

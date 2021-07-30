@@ -375,31 +375,119 @@ contract("DAOmine", async () => {
         expect(user1Info.lpAmount, depositAmount, "The lpAmount in DAOmine is the current block");
     });
 
-    // it("Should yield() works properly", async () => {
-    //     // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
-    //     await daoMine.addPool(lpToken1.address, 100, true);
-    //     await daoMine.addPool(lpToken2.address, 200, true);
-    //     await daoMine.addPool(lpToken3.address, 100, true);
-    //     await daoMine.addPool(lpToken4.address, 200, true);
+    it("Should yield() works properly", async () => {
+        // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
+        await daoMine.addPool(lpToken1.address, 100, true);
+        await daoMine.addPool(lpToken2.address, 200, true);
+        await daoMine.addPool(lpToken3.address, 100, true);
+        await daoMine.addPool(lpToken4.address, 200, true);
 
-    //     // 2 users deposit LP token 1 (user 1 -> 0.5, user 2 -> 1)
-    //     await lpToken1.approve(daoMine.address, UInt256Max(), {from:a1.address});
-    //     await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
-    //     await lpToken1.approve(daoMine.address, UInt256Max(), {from:a2.address});
-    //     await daoMine.connect(a2).deposit(1, ethers.utils.parseEther("1"));
+        // 2 users deposit LP token 1 (user 1 -> 0.5, user 2 -> 1)
+        await lpToken1.approve(daoMine.address, UInt256Max(), {from:a1.address});
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
+        await lpToken1.approve(daoMine.address, UInt256Max(), {from:a2.address});
+        await daoMine.connect(a2).deposit(1, ethers.utils.parseEther("1"));
 
-    //     // 5 users deposit LP token 2 (user 1 -> 0.5, user 2 -> 1, user 3 -> 1.5, user 4 -> 2, user 5 -> 2.5)
-    //     for (i = 0; i < 5; i++) {
-    //         await lpToken2.approve(daoMine.address, (parseInt(ethers.utils.parseEther("0.5")) * i).toString(), {from:accounts[i].address});
-    //         await daoMine.connect(accounts[i]).deposit(2, (parseInt(ethers.utils.parseEther("0.5")) * i).toString());
-    //     }
+        // 5 users deposit LP token 2 (user 1 -> 0.5, user 2 -> 1, user 3 -> 1.5, user 4 -> 2, user 5 -> 2.5)
+        for (i = 0; i < 5; i++) {
+            await lpToken2.approve(daoMine.address, (parseInt(ethers.utils.parseEther("0.5")) * i).toString(), {from:accounts[i].address});
+            await daoMine.connect(accounts[i]).deposit(2, (parseInt(ethers.utils.parseEther("0.5")) * i).toString());
+        }
 
-    //     await advanceBlockTo(await daoMine.START_BLOCK());
+        await advanceBlockTo(await daoMine.START_BLOCK());
 
-    //     await daoMine.massUpdatePools();
+        await daoMine.massUpdatePools();
 
-    //     expect(await dvd.balanceOf(a1.address)).equal(0);
-    //     expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
-    //     expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
-    // });
+        expect(await dvd.balanceOf(a1.address)).equal(0);
+        expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
+        expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
+
+        await dvd.connect(dvdOwner).transfer(a1.address, ethers.utils.parseEther("1000"));
+        await dvd.connect(a1).increaseAllowance(xdvd.address, UInt256Max());
+        expect(await xdvd.balanceOf(a1.address)).to.equal('0');
+
+        // Deposited amount = 1000 => Tier 1
+        const tier0EndBlock = await blockNumber();
+        await xdvd.connect(a1).deposit(ethers.utils.parseEther("1000"), false);
+        await advanceBlocks(10);
+        [tier, startBlock, endBlock] = await xdvd.tierAt(a1.address, tier0EndBlock+5);
+        const pendingBlocks = parseInt(await blockNumber()) - parseInt(await daoMine.START_BLOCK());
+        
+        await daoMine.connect(a1).yield(1);
+        user1Info = await daoMine.user(1, a1.address);
+        const receivedPendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks+1);
+        const receivedTierBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        expect(user1Info.finishedBlock).equal(parseInt(endBlock) + 1);
+        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(receivedTierBonus.toString()));
+        expect(user1Info.lastDepositTime).equal(await blockTimestamp());
+        expect(user1Info.finishedDVD).equal(ethers.utils.parseEther(receivedPendingDvd.toString()));
+        const receivedAmount = receivedPendingDvd.plus(receivedTierBonus).shiftedBy(18);
+
+        let [, amountDeposited] = await xdvd.getTier(a1.address);
+        let xdvdPoolInfo = await daoMine.user(0, a1.address);
+        expect(amountDeposited.toString()).equal(receivedAmount.plus((new BigNumber("1000")).shiftedBy(18)).toString());
+        expect(await dvd.balanceOf(a1.address)).equal(0);
+        expect(await xdvd.balanceOf(a1.address)).to.equal(ethers.utils.parseEther("1000"));
+        expect(xdvdPoolInfo.lpAmount).to.equal(receivedAmount.toString());
+        expect(xdvdPoolInfo.finishedBlock).to.equal(parseInt(endBlock) + 1);
+        expect(xdvdPoolInfo.lastDepositTime).equal(await blockTimestamp());
+    });
+
+    it("Should the early withdrawal penalty works properly", async () => {
+        // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
+        await daoMine.addPool(lpToken1.address, 100, true);
+        await daoMine.addPool(lpToken2.address, 200, true);
+        await daoMine.addPool(lpToken3.address, 100, true);
+        await daoMine.addPool(lpToken4.address, 200, true);
+
+        // 2 users deposit LP token 1 (user 1 -> 0.5, user 2 -> 1)
+        await lpToken1.approve(daoMine.address, UInt256Max(), {from:a1.address});
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
+        let letDepositTime = await blockTimestamp();
+        await lpToken1.approve(daoMine.address, UInt256Max(), {from:a2.address});
+        await daoMine.connect(a2).deposit(1, ethers.utils.parseEther("1"));
+
+        // 5 users deposit LP token 2 (user 1 -> 0.5, user 2 -> 1, user 3 -> 1.5, user 4 -> 2, user 5 -> 2.5)
+        for (i = 0; i < 5; i++) {
+            await lpToken2.approve(daoMine.address, (parseInt(ethers.utils.parseEther("0.5")) * i).toString(), {from:accounts[i].address});
+            await daoMine.connect(accounts[i]).deposit(2, (parseInt(ethers.utils.parseEther("0.5")) * i).toString());
+        }
+
+        await advanceBlockTo(await daoMine.START_BLOCK());
+
+        await daoMine.massUpdatePools();
+
+        expect(await dvd.balanceOf(a1.address)).equal(0);
+        expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
+        expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
+
+        await dvd.connect(dvdOwner).transfer(a1.address, ethers.utils.parseEther("1000"));
+        await dvd.connect(a1).increaseAllowance(xdvd.address, UInt256Max());
+        expect(await xdvd.balanceOf(a1.address)).to.equal('0');
+
+        // Deposited amount = 1000 => Tier 1
+        const tier0EndBlock = await blockNumber();
+        await xdvd.connect(a1).deposit(ethers.utils.parseEther("1000"), false);
+        await advanceBlocks(10);
+        [tier, startBlock, endBlock] = await xdvd.tierAt(a1.address, tier0EndBlock+5);
+        const pendingBlocks = parseInt(await blockNumber()) - parseInt(await daoMine.START_BLOCK());
+        
+        await daoMine.connect(a1).withdraw(1, ethers.utils.parseEther("0.5"));
+        user1Info = await daoMine.user(1, a1.address);
+        let receivedPendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks+1);
+        let tierBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        let penalty = tierBonus.multipliedBy((await daoMine.earlyWithdrawalPenaltyPercent()).toString()).dividedBy(100);
+        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.minus(penalty).toString()));
+        expect(user1Info.lastDepositTime).equal(letDepositTime);
+
+        // deposit again
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
+        await daoMine.setEarlyWithdrawalPenalty(1, 20);
+        await daoMine.connect(a1).withdraw(1, ethers.utils.parseEther("0.5"));
+        user1Info = await daoMine.user(1, a1.address);
+        let receivedPendingDvd1 = (new BigNumber(0.6375)).multipliedBy(2);
+        let tierBonus1 = receivedPendingDvd1.multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        // penalty is 0 because period is too short
+        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.minus(penalty).plus(tierBonus1).toString()));
+    });
 });

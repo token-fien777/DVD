@@ -479,7 +479,8 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
             if(pendingDVD_ > 0 && _proxy == _account) {
                 // Due to the security issue, we will transfer DVD rewards in only case of users directly deposit.
                 uint256 bonus_ = _pendingTierBonus(_account, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
-                _safeDVDTransfer(_account, pendingDVD_.add(bonus_));
+                _safeDVDTransfer(_account, pendingDVD_);
+                if (0 < bonus_) dvd.mint(_account, bonus_);
                 user_.finishedBlock = pool_.lastRewardBlock;
                 user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
                 pendingDVD_ = 0;
@@ -508,8 +509,9 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
      * @param _amount    amount of LP tokens to be withdrawn
      */
     function withdraw(uint256 _pid, uint256 _amount) public {
+        address account_ = msg.sender;
         Pool storage pool_ = pool[_pid];
-        User storage user_ = user[_pid][msg.sender];
+        User storage user_ = user[_pid][account_];
 
         require(user_.lpAmount >= _amount, "Not enough LP token balance");
 
@@ -518,7 +520,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
 
         if(pendingDVD_ > 0) {
-            uint256 bonus_ = _pendingTierBonus(msg.sender, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
+            uint256 bonus_ = _pendingTierBonus(account_, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
             if (block.timestamp < user_.lastDepositTime.add(earlyWithdrawalPenaltyPeriod)) {
                 uint256 penalty_ = bonus_.mul(earlyWithdrawalPenaltyPercent).div(100);
                 if (0 < penalty_) {
@@ -526,19 +528,20 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
                     bonus_ = bonus_.sub(penalty_);
                 }
             }
-            _safeDVDTransfer(msg.sender, pendingDVD_.add(bonus_));
+            _safeDVDTransfer(account_, pendingDVD_);
+            if (0 < bonus_) dvd.mint(account_, bonus_);
             user_.finishedBlock = pool_.lastRewardBlock;
             user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
         }
 
         if(_amount > 0) {
             user_.lpAmount = user_.lpAmount.sub(_amount);
-            IERC20Upgradeable(pool_.lpTokenAddress).safeTransfer(address(msg.sender), _amount);
+            IERC20Upgradeable(pool_.lpTokenAddress).safeTransfer(account_, _amount);
         }
 
         user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether);
 
-        emit Withdraw(msg.sender, _pid, _amount);
+        emit Withdraw(account_, _pid, _amount);
     }
 
     /** 
@@ -593,6 +596,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         require(0 < pendingDVD_, "User should have the pending DVD rewards");
 
         uint256 bonus_ = _pendingTierBonus(account_, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
+        if (0 < bonus_) dvd.mint(address(this), bonus_);
         user_.finishedBlock = pool_.lastRewardBlock;
         user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
         user_.finishedDVD = user_.finishedDVD.add(pendingDVD_);
