@@ -75,7 +75,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
     // xDVD contract
     IxDVD public xdvd;
     // Pool ID for xDVD
-    uint256 public xdvdPid;
+    uint256 private _xdvdPid;
 
     // Percent of DVD is distributed to treasury wallet per block: 24.5%
     uint256 public constant TREASURY_WALLET_PERCENT = 2450;
@@ -216,9 +216,13 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
 
         Pool memory _pool = poolMap[address(_xdvd)];
         if (_pool.lpTokenAddress != address(0)) {
-            xdvdPid = _pool.pid;
-            emit SetXDVDPid(xdvdPid);
+            _xdvdPid = _pool.pid;
+            emit SetXDVDPid(_xdvdPid);
         }
+    }
+
+    function xdvdPid() external view override returns(uint256) {
+        return _xdvdPid;
     }
 
     /**
@@ -336,6 +340,10 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
 
         while(_from < _to) {
             (uint8 tier_, , uint256 endBlock_) = xdvd.tierAt(_account, _from);
+            if (_to <= endBlock_) {
+                // _to block is not contained in the pending DVD
+                endBlock_ = _to.sub(1);
+            }
 
             if (tier_ < tierBonusRate.length) {
                 uint256 bonusRate_ = tierBonusRate[tier_];
@@ -382,8 +390,8 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         emit AddPool(_lpTokenAddress, _poolWeight, lastRewardBlock);
 
         if (address(xdvd) == _lpTokenAddress) {
-            xdvdPid = newPool_.pid;
-            emit SetXDVDPid(xdvdPid);
+            _xdvdPid = newPool_.pid;
+            emit SetXDVDPid(_xdvdPid);
         }
     }
 
@@ -595,7 +603,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         xdvd.depositByProxy(account_, dvdAmount_);
         uint256 xdvdAmount_ = xdvd.balanceOf(address(this)).sub(xdvdBalance_);
 
-        _deposit(address(this), account_, xdvdPid, xdvdAmount_);
+        _deposit(address(this), account_, _xdvdPid, xdvdAmount_);
 
         emit Yield(account_, _pid, dvdAmount_);
     }

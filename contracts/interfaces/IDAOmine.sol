@@ -11,4 +11,8 @@ interface IDAOmine {
      */
     function depositByProxy(address _account, uint256 _pid, uint256 _amount) external;
 
+    /**
+     * @dev Returns the pid of xDVD pool in DAOmine.
+     */
+    function xdvdPid() external view returns(uint256);
 }
