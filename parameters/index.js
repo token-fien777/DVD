@@ -11,6 +11,8 @@ module.exports = {
     },
     xDVD: {
       tokenAddress: "0x1193c036833B0010fF80a3617BBC94400A284338",
+      proxyAdmin: "0xA1b0176B24cFB9DB3AEe2EDf7a6DF129B69ED376",  // This is used only hardhat test, no needed for deployment
+      ownerAddress: "0xA1b0176B24cFB9DB3AEe2EDf7a6DF129B69ED376",  // This is used only hardhat test, no needed for deployment
     },
     DAOmine: {
       startBlock: 12910350,  // TODO: Update with correct value. First block that DAOmine will start from

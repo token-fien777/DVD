@@ -5,7 +5,7 @@ BigNumber.config({
   EXPONENTIAL_AT: 1e+9,
   ROUNDING_MODE: BigNumber.ROUND_FLOOR,
 })
-const { advanceBlockTo } = require('./utils/Ethereum');
+const { advanceBlockTo, advanceBlocks, blockNumber, blockTimestamp, UInt256Max } = require('./utils/Ethereum');
 
 const IxDVD = artifacts.require("IxDVD");
 const DAOventuresTokenImplementation = artifacts.require("DAOventuresTokenImplementation");
@@ -38,8 +38,8 @@ contract("DAOmine", async () => {
 
         // LP token 1     
         lpToken1 = await LPTokenMockup.new("LPToken1", "lp1");
-        await lpToken1.mint(a1.address, new BN("1000000000000000000"));
-        await lpToken1.mint(a2.address, new BN("2000000000000000000"));
+        await lpToken1.mint(a1.address, ethers.utils.parseEther('10'));
+        await lpToken1.mint(a2.address, ethers.utils.parseEther('10'));
         // LP token 2
         lpToken2 = await LPTokenMockup.new("LPToken2", "lp2");
         for (i = 0; i < 5; i++) {
@@ -166,30 +166,30 @@ contract("DAOmine", async () => {
         await daoMine.addPool(lpToken2.address, 2, true);
 
         // user 1 deposits some (0.5) LP token 1
-        await lpToken1.approve(daoMine.address, new BN("600000000000000000"), {from: a1.address});
-        await daoMine.connect(a1).deposit(1, "500000000000000000");
-        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), new BN("500000000000000000"), "The user 1 should have correct LP token balance in DAOmine");
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther('10'), {from: a1.address});
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther('5'));
+        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), ethers.utils.parseEther('5'), "The user 1 should have correct LP token balance in DAOmine");
         assert.equal((await daoMine.user(1, a1.address)).finishedDVD.toString(), 0, "The user 1 should have correct finished DVG token amount in DAOmine");
-        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), new BN("500000000000000000"), "The user 1 should have correct balance in LP token");
-        assert.equal((await lpToken1.allowance(a1.address, daoMine.address)).toString(), new BN("100000000000000000"), "The DAOmine should have correct allowance from user 1 in LP token");
+        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), ethers.utils.parseEther('5'), "The user 1 should have correct balance in LP token");
+        assert.equal((await lpToken1.allowance(a1.address, daoMine.address)).toString(), ethers.utils.parseEther('5'), "The DAOmine should have correct allowance from user 1 in LP token");
 
         // user 2 deposits some (1) LP token 1
-        await lpToken1.approve(daoMine.address, new BN("1000000000000000000"), {from: a2.address});
-        await daoMine.connect(a2).deposit(1, "1000000000000000000");
-        assert.equal((await daoMine.user(1, a2.address)).lpAmount.toString(), new BN("1000000000000000000"), "The user 2 should have correct LP token balance in DAOmine");
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther('10'), {from: a2.address});
+        await daoMine.connect(a2).deposit(1, ethers.utils.parseEther('1'));
+        assert.equal((await daoMine.user(1, a2.address)).lpAmount.toString(), ethers.utils.parseEther('1'), "The user 2 should have correct LP token balance in DAOmine");
         assert.equal((await daoMine.user(1, a2.address)).finishedDVD.toString(), 0, "The user 2 should have correct finished DVG token amount in DAOmine");
-        assert.equal((await lpToken1.balanceOf(a2.address)).toString(), new BN("1000000000000000000"), "The user 2 should have correct balance in LP token");
-        assert.equal((await lpToken1.allowance(a2.address, daoMine.address)).toString(), 0, "The DAOmine should have correct allowance from user 2 in LP token");
+        assert.equal((await lpToken1.balanceOf(a2.address)).toString(), ethers.utils.parseEther('9'), "The user 2 should have correct balance in LP token");
+        assert.equal((await lpToken1.allowance(a2.address, daoMine.address)).toString(), ethers.utils.parseEther('9'), "The DAOmine should have correct allowance from user 2 in LP token");
         
         // user 1 deposits some (0.1) LP token 1 again
-        tx = await daoMine.connect(a1).deposit(1, "100000000000000000");
-        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), new BN("600000000000000000"), "The user 1 should have correct LP token balance in DAOmine");
+        tx = await daoMine.connect(a1).deposit(1, ethers.utils.parseEther('1'));
+        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), ethers.utils.parseEther('6'), "The user 1 should have correct LP token balance in DAOmine");
         assert.equal((await daoMine.user(1, a1.address)).finishedDVD.toString(), 0, "The user 1 should have correct finished DVG token amount in DAOmine");
-        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), new BN("400000000000000000"), "The user 1 should have correct balance in LP token");
-        assert.equal((await lpToken1.allowance(a1.address, daoMine.address)).toString(), 0, "The DAOmine should have correct allowance from user 1 in LP token");
+        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), ethers.utils.parseEther('4'), "The user 1 should have correct balance in LP token");
+        assert.equal((await lpToken1.allowance(a1.address, daoMine.address)).toString(), ethers.utils.parseEther('4'), "The DAOmine should have correct allowance from user 1 in LP token");
 
         // check LP token 1 balance of DAOmine
-        assert.equal((await lpToken1.balanceOf(daoMine.address)).toString(), new BN("1600000000000000000"), "The pool 0 should have correct balance in LP token");
+        assert.equal((await lpToken1.balanceOf(daoMine.address)).toString(), ethers.utils.parseEther('7'), "The pool 0 should have correct balance in LP token");
     });
 
 
@@ -200,37 +200,37 @@ contract("DAOmine", async () => {
 
 
         // 2 users deposit some LP token 1 (user 1 -> 0.6, user 2 -> 1)
-        await lpToken1.approve(daoMine.address, new BN("600000000000000000"), {from:a1.address});
-        await daoMine.connect(a1).deposit(1, "600000000000000000");
-        await lpToken1.approve(daoMine.address, new BN("1000000000000000000"), {from:a2.address});
-        await daoMine.connect(a2).deposit(1, "1000000000000000000");
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther('10'), {from:a1.address});
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther('6'));
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther('10'), {from:a2.address});
+        await daoMine.connect(a2).deposit(1, ethers.utils.parseEther('10'));
 
         // user 1 withdraws some (0.5) LP token 1
-        await daoMine.connect(a1).withdraw(1, "500000000000000000");
-        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), new BN("100000000000000000"), "The user 1 should have correct LP token balance in DAOmine");
-        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), new BN("900000000000000000"), "The user 1 should have correct balance in LP token");
+        await daoMine.connect(a1).withdraw(1, ethers.utils.parseEther('5'));
+        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), ethers.utils.parseEther('1'), "The user 1 should have correct LP token balance in DAOmine");
+        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), ethers.utils.parseEther('9'), "The user 1 should have correct balance in LP token");
 
         // user 2 withdraws all (1) LP token 1
-        await daoMine.connect(a2).withdraw(1, "1000000000000000000");
-        assert.equal((await daoMine.user(1, a2.address)).lpAmount.toString(), 0, "The user 2 should have correct LP token balance in DAOmine");
-        assert.equal((await lpToken1.balanceOf(a2.address)).toString(), new BN("2000000000000000000"), "The user 1 should have correct balance in LP token smart contract");
+        await daoMine.connect(a2).withdraw(1, ethers.utils.parseEther('1'));
+        assert.equal((await daoMine.user(1, a2.address)).lpAmount.toString(), ethers.utils.parseEther('9'), "The user 2 should have correct LP token balance in DAOmine");
+        assert.equal((await lpToken1.balanceOf(a2.address)).toString(), ethers.utils.parseEther('1'), "The user 1 should have correct balance in LP token smart contract");
 
         // user 1 withdraws remaining (0.1) LP token 1
-        await daoMine.connect(a1).withdraw(1, "100000000000000000");
+        await daoMine.connect(a1).withdraw(1, ethers.utils.parseEther('1'));
         assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), 0, "The user 1 should have correct LP token balance in DAOmine");
-        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), new BN("1000000000000000000"), "The user 1 should have correct balance in LP token smart contract");
+        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), ethers.utils.parseEther('10'), "The user 1 should have correct balance in LP token smart contract");
         
         // check LP token 1 balance of DAOmine
-        assert.equal((await lpToken1.balanceOf(daoMine.address)).toString(), 0, "The pool 0 should have correct balance in LP token");
+        assert.equal((await lpToken1.balanceOf(daoMine.address)).toString(), ethers.utils.parseEther('9'), "The pool 0 should have correct balance in LP token");
 
         // user 1 deposits 0.1 LP token 1 again
-        await lpToken1.approve(daoMine.address, new BN("100000000000000000"), {from:a1.address});
-        await daoMine.connect(a1).deposit(1, "100000000000000000");
-        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), new BN("100000000000000000"), "The user 1 should have correct LP token balance in DAOmine");
-        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), new BN("900000000000000000"), "The user 1 should have correct balance in LP token");
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther('10'), {from:a1.address});
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther('1'));
+        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), ethers.utils.parseEther('1'), "The user 1 should have correct LP token balance in DAOmine");
+        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), ethers.utils.parseEther('9'), "The user 1 should have correct balance in LP token");
         
         // check LP token 1 balance of DAOmine
-        assert.equal((await lpToken1.balanceOf(daoMine.address)).toString(), new BN("100000000000000000"), "The pool 0 should have correct balance in LP token");
+        assert.equal((await lpToken1.balanceOf(daoMine.address)).toString(), ethers.utils.parseEther('10'), "The pool 0 should have correct balance in LP token");
     });
 
     
@@ -239,14 +239,14 @@ contract("DAOmine", async () => {
         await daoMine.addPool(lpToken1.address, 1, true);
 
         // user 1 deposits some (0.5) LP token 1 
-        await lpToken1.approve(daoMine.address, new BN("600000000000000000"), {from:a1.address});
-        await daoMine.connect(a1).deposit(1, "500000000000000000");
-        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), new BN("500000000000000000"), "The user 1 should have correct balance in LP token");
-        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), new BN("500000000000000000"), "The user 1 should have correct LP token balance in DAOmine");
+        await lpToken1.approve(daoMine.address, ethers.utils.parseEther('10'), {from:a1.address});
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther('5'));
+        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), ethers.utils.parseEther('5'), "The user 1 should have correct balance in LP token");
+        assert.equal((await daoMine.user(1, a1.address)).lpAmount.toString(), ethers.utils.parseEther('5'), "The user 1 should have correct LP token balance in DAOmine");
 
         // user 1 emergency withdraws LP token 1 
         await daoMine.connect(a1).emergencyWithdraw(1);
-        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), new BN("1000000000000000000"), "The user 1 should have correct balance in LP token");
+        assert.equal((await lpToken1.balanceOf(a1.address)).toString(), ethers.utils.parseEther('10'), "The user 1 should have correct balance in LP token");
         assert.equal((await daoMine.user(1, a1.address)).lpAmount, 0, "The user 1 should have correct LP token balance in DAOmine");
         assert.equal((await daoMine.user(1, a1.address)).finishedDVD, 0, "The user 1 should have zero finished DVG amount in DAOmine");
     });
@@ -259,10 +259,13 @@ contract("DAOmine", async () => {
         await daoMine.addPool(lpToken3.address, 100, true);
         await daoMine.addPool(lpToken4.address, 200, true);
 
+        let user1Info = await daoMine.user(1, a1.address);
+        expect(user1Info.lastDepositTime).equal(0);
+
         // 2 users deposit LP token 1 (user 1 -> 0.5, user 2 -> 1)
-        await lpToken1.approve(daoMine.address, ethers.utils.parseEther("0.5"), {from:a1.address});
+        await lpToken1.approve(daoMine.address, UInt256Max(), {from:a1.address});
         await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
-        await lpToken1.approve(daoMine.address, ethers.utils.parseEther("1"), {from:a2.address});
+        await lpToken1.approve(daoMine.address, UInt256Max(), {from:a2.address});
         await daoMine.connect(a2).deposit(1, ethers.utils.parseEther("1"));
 
         // 5 users deposit LP token 2 (user 1 -> 0.5, user 2 -> 1, user 3 -> 1.5, user 4 -> 2, user 5 -> 2.5)
@@ -298,8 +301,105 @@ contract("DAOmine", async () => {
             assert.equal(await dvd.balanceOf(accounts[i].address), 0, `Should not mint and distribute DVDs to user ${i} if no deposit or withdrawal`);
         }
 
+        expect(await dvd.balanceOf(a1.address)).equal(0);
+        expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
+        expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
+
         // pending DVG amount for user 1 from pool 1:
         // 30(dvgPerBlock) * 51%(poolPercent) * (100/800)(pool3Weight/totalWeight) * (0.5/1.5)(share/totalShare) = 0.6375
         assert.equal((await daoMine.pendingDVD(1, a1.address)).toString(), ethers.utils.parseEther("0.6375"), "The user 1 should have correct pending DVD amount in DAOmine");
+
+        //
+        // Tier bonus
+        //
+        assert.equal((await daoMine.pendingTierBonus(1, a1.address)).toString(), 0, "No tier bonus because no xDVD");
+
+        await dvd.connect(dvdOwner).transfer(a1.address, ethers.utils.parseEther("1000"));
+        await dvd.connect(a1).increaseAllowance(xdvd.address, UInt256Max());
+        expect(await xdvd.balanceOf(a1.address)).to.equal('0');
+
+        // Deposited amount = 1000 => Tier 1
+        const tier0EndBlock = await blockNumber();
+        await xdvd.connect(a1).deposit(ethers.utils.parseEther("1000"), false);
+        await advanceBlocks(10);
+        [tier, startBlock, endBlock] = await xdvd.tierAt(a1.address, tier0EndBlock+5);
+        expect(tier).to.equal(1);
+        expect(startBlock).to.equal(tier0EndBlock+1);
+        expect(endBlock).to.equal(await blockNumber());
+
+        const pendingBlocks = parseInt(await blockNumber()) - parseInt(await daoMine.START_BLOCK());
+        const pendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks);
+        assert.equal((await daoMine.pendingDVD(1, a1.address)).toString(), ethers.utils.parseEther(pendingDvd.toString()), "The user 1 should have correct pending DVD amount in DAOmine");
+        
+        const tierBonus = pendingDvd.multipliedBy(endBlock-startBlock).dividedBy(pendingBlocks).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        expect(await daoMine.pendingTierBonus(1, a1.address)).equal(ethers.utils.parseEther(tierBonus.toString()));
+
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
+        user1Info = await daoMine.user(1, a1.address);
+        const receivedPendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks+1);
+        const receivedTierBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        expect(user1Info.finishedBlock).equal(parseInt(endBlock) + 1);
+        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(receivedTierBonus.toString()));
+        expect(await dvd.balanceOf(a1.address)).equal(ethers.utils.parseEther(receivedPendingDvd.plus(receivedTierBonus).toString()));
+        expect(user1Info.lastDepositTime).equal(await blockTimestamp());
+
+        await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
+        user1Info = await daoMine.user(1, a1.address);
+        // 30(dvgPerBlock) * 51%(poolPercent) * (100/800)(pool3Weight/totalWeight) * (1/2)(share/totalShare) = 0.95625
+        const receivedPendingDvd1 = (new BigNumber(0.95625));
+        const receivedTierBonus1 = receivedPendingDvd1.multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        expect(user1Info.finishedBlock).equal(await blockNumber());
+        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(receivedTierBonus.plus(receivedTierBonus1).toString()));
+        expect(await dvd.balanceOf(a1.address)).equal(ethers.utils.parseEther(receivedPendingDvd.plus(receivedTierBonus).plus(receivedPendingDvd1).plus(receivedTierBonus1).toString()));
+        expect(await daoMine.pendingDVD(1, a1.address)).equal(0);
+        expect(await daoMine.pendingTierBonus(1, a1.address)).equal(0);
     });
+
+    it("Should auto staked properly in xDVD", async () => {
+        const depositAmount = ethers.utils.parseEther("1000");
+        await dvd.connect(dvdOwner).transfer(a1.address, depositAmount);
+        await dvd.connect(a1).increaseAllowance(xdvd.address, UInt256Max());
+        expect(await xdvd.balanceOf(a1.address)).to.equal('0');
+
+        const xdvdOwner = await ethers.getSigner(network_.xDVD.ownerAddress);
+        await xdvd.connect(xdvdOwner).setDAOmine(daoMine.address);
+
+        // Deposited amount = 1000 => Tier 1
+        await xdvd.connect(a1).deposit(depositAmount, true);
+        [tier, amountDeposited] = await xdvd.getTier(a1.address);
+        expect(amountDeposited).equal(depositAmount);
+        expect(await xdvd.balanceOf(a1.address)).to.equal('0');
+        expect(await xdvd.balanceOf(daoMine.address)).to.equal(depositAmount);
+
+        let user1Info = await daoMine.user(0, a1.address);
+        expect(user1Info.lpAmount, depositAmount, "The lpAmount in DAOmine is the current block");
+    });
+
+    // it("Should yield() works properly", async () => {
+    //     // add 4 new pools (pool 0 -> LP token 1, pool weight 1; pool 1 -> LP token 2, pool weight 2; pool 2 -> LP token 3, pool weight 3; pool 3 -> LP token 4, pool weight 4)
+    //     await daoMine.addPool(lpToken1.address, 100, true);
+    //     await daoMine.addPool(lpToken2.address, 200, true);
+    //     await daoMine.addPool(lpToken3.address, 100, true);
+    //     await daoMine.addPool(lpToken4.address, 200, true);
+
+    //     // 2 users deposit LP token 1 (user 1 -> 0.5, user 2 -> 1)
+    //     await lpToken1.approve(daoMine.address, UInt256Max(), {from:a1.address});
+    //     await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
+    //     await lpToken1.approve(daoMine.address, UInt256Max(), {from:a2.address});
+    //     await daoMine.connect(a2).deposit(1, ethers.utils.parseEther("1"));
+
+    //     // 5 users deposit LP token 2 (user 1 -> 0.5, user 2 -> 1, user 3 -> 1.5, user 4 -> 2, user 5 -> 2.5)
+    //     for (i = 0; i < 5; i++) {
+    //         await lpToken2.approve(daoMine.address, (parseInt(ethers.utils.parseEther("0.5")) * i).toString(), {from:accounts[i].address});
+    //         await daoMine.connect(accounts[i]).deposit(2, (parseInt(ethers.utils.parseEther("0.5")) * i).toString());
+    //     }
+
+    //     await advanceBlockTo(await daoMine.START_BLOCK());
+
+    //     await daoMine.massUpdatePools();
+
+    //     expect(await dvd.balanceOf(a1.address)).equal(0);
+    //     expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
+    //     expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
+    // });
 });
