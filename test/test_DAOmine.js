@@ -474,10 +474,11 @@ contract("DAOmine", async () => {
         
         await daoMine.connect(a1).withdraw(1, ethers.utils.parseEther("0.5"));
         user1Info = await daoMine.user(1, a1.address);
-        let receivedPendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks+1);
-        let tierBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
-        let penalty = tierBonus.multipliedBy((await daoMine.earlyWithdrawalPenaltyPercent()).toString()).dividedBy(100);
-        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.minus(penalty).toString()));
+        let pendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks+1);
+        let penalty = pendingDvd.multipliedBy((await daoMine.earlyWithdrawalPenaltyPercent()).toString()).dividedBy(100);
+        pendingDvd = pendingDvd.minus(penalty);
+        let tierBonus = pendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.toString()));
         expect(user1Info.lastDepositTime).equal(letDepositTime);
 
         // deposit again
@@ -488,6 +489,6 @@ contract("DAOmine", async () => {
         let receivedPendingDvd1 = (new BigNumber(0.6375)).multipliedBy(2);
         let tierBonus1 = receivedPendingDvd1.multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
         // penalty is 0 because period is too short
-        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.minus(penalty).plus(tierBonus1).toString()));
+        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.plus(tierBonus1).toString()));
     });
 });

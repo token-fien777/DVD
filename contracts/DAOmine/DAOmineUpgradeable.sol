@@ -520,14 +520,14 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
 
         if(pendingDVD_ > 0) {
-            uint256 bonus_ = _pendingTierBonus(account_, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
             if (block.timestamp < user_.lastDepositTime.add(earlyWithdrawalPenaltyPeriod)) {
-                uint256 penalty_ = bonus_.mul(earlyWithdrawalPenaltyPercent).div(100);
+                uint256 penalty_ = pendingDVD_.mul(earlyWithdrawalPenaltyPercent).div(100);
                 if (0 < penalty_) {
                     dvd.burn(penalty_);
-                    bonus_ = bonus_.sub(penalty_);
+                    pendingDVD_ = pendingDVD_.sub(penalty_);
                 }
             }
+            uint256 bonus_ = _pendingTierBonus(account_, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
             _safeDVDTransfer(account_, pendingDVD_);
             if (0 < bonus_) dvd.mint(account_, bonus_);
             user_.finishedBlock = pool_.lastRewardBlock;
