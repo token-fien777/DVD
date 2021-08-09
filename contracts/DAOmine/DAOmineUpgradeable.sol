@@ -51,7 +51,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         uint256 receivedBonus;
         // Timestamp of the last deposit or yield
         uint256 lastDepositTime;
-        // Timestamp of the last deposit or yield
+        // Timestamp of the last withdrawal
         uint256 lastWithdrawalTime;
     }
 
@@ -545,6 +545,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         }
 
         user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether);
+        // user_.lastWithdrawalTime = block.number;
 
         emit Withdraw(account_, _pid, _amount);
     }
