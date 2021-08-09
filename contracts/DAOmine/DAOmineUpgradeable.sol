@@ -47,10 +47,12 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         uint256 finishedDVD;
         // Last block number that rewards transferred to this user
         uint256 finishedBlock;
-        // Total amount of the received tier bonus
-        uint256 receivedTierBonus;
+        // Total amount of the received bonuses
+        uint256 receivedBonus;
         // Timestamp of the last deposit or yield
         uint256 lastDepositTime;
+        // Timestamp of the last deposit or yield
+        uint256 lastWithdrawalTime;
     }
 
     /* 
@@ -483,7 +485,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
                 _safeDVDTransfer(_account, pendingDVD_);
                 if (0 < bonus_) dvd.mint(_account, bonus_);
                 user_.finishedBlock = pool_.lastRewardBlock;
-                user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
+                user_.receivedBonus = user_.receivedBonus.add(bonus_);
                 pendingDVD_ = 0;
                 emit Reward(_account, _pid, user_.lpAmount, pendingDVD_, bonus_);
             }
@@ -533,7 +535,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
             _safeDVDTransfer(account_, pendingDVD_);
             if (0 < bonus_) dvd.mint(account_, bonus_);
             user_.finishedBlock = pool_.lastRewardBlock;
-            user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
+            user_.receivedBonus = user_.receivedBonus.add(bonus_);
             emit Reward(account_, _pid, user_.lpAmount, pendingDVD_, bonus_);
         }
 
@@ -601,7 +603,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         uint256 bonus_ = _pendingTierBonus(account_, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
         if (0 < bonus_) dvd.mint(address(this), bonus_);
         user_.finishedBlock = pool_.lastRewardBlock;
-        user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
+        user_.receivedBonus = user_.receivedBonus.add(bonus_);
         user_.finishedDVD = user_.finishedDVD.add(pendingDVD_);
         user_.lastDepositTime = block.timestamp;
 

@@ -303,7 +303,7 @@ contract("DAOmine", async () => {
 
         expect(await dvd.balanceOf(a1.address)).equal(0);
         expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
-        expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
+        expect((await daoMine.user(1, a1.address)).receivedBonus).equal(0);
 
         // pending DVG amount for user 1 from pool 1:
         // 30(dvgPerBlock) * 51%(poolPercent) * (100/800)(pool3Weight/totalWeight) * (0.5/1.5)(share/totalShare) = 0.6375
@@ -337,10 +337,10 @@ contract("DAOmine", async () => {
         await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
         user1Info = await daoMine.user(1, a1.address);
         const receivedPendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks+1);
-        const receivedTierBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        const receivedBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
         expect(user1Info.finishedBlock).equal(parseInt(endBlock) + 1);
-        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(receivedTierBonus.toString()));
-        expect(await dvd.balanceOf(a1.address)).equal(ethers.utils.parseEther(receivedPendingDvd.plus(receivedTierBonus).toString()));
+        expect(user1Info.receivedBonus).equal(ethers.utils.parseEther(receivedBonus.toString()));
+        expect(await dvd.balanceOf(a1.address)).equal(ethers.utils.parseEther(receivedPendingDvd.plus(receivedBonus).toString()));
         expect(user1Info.lastDepositTime).equal(await blockTimestamp());
 
         await daoMine.connect(a1).deposit(1, ethers.utils.parseEther("0.5"));
@@ -349,8 +349,8 @@ contract("DAOmine", async () => {
         const receivedPendingDvd1 = (new BigNumber(0.95625));
         const receivedTierBonus1 = receivedPendingDvd1.multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
         expect(user1Info.finishedBlock).equal(await blockNumber());
-        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(receivedTierBonus.plus(receivedTierBonus1).toString()));
-        expect(await dvd.balanceOf(a1.address)).equal(ethers.utils.parseEther(receivedPendingDvd.plus(receivedTierBonus).plus(receivedPendingDvd1).plus(receivedTierBonus1).toString()));
+        expect(user1Info.receivedBonus).equal(ethers.utils.parseEther(receivedBonus.plus(receivedTierBonus1).toString()));
+        expect(await dvd.balanceOf(a1.address)).equal(ethers.utils.parseEther(receivedPendingDvd.plus(receivedBonus).plus(receivedPendingDvd1).plus(receivedTierBonus1).toString()));
         expect(await daoMine.pendingDVD(1, a1.address)).equal(0);
         expect(await daoMine.pendingTierBonus(1, a1.address)).equal(0);
     });
@@ -400,7 +400,7 @@ contract("DAOmine", async () => {
 
         expect(await dvd.balanceOf(a1.address)).equal(0);
         expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
-        expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
+        expect((await daoMine.user(1, a1.address)).receivedBonus).equal(0);
 
         await dvd.connect(dvdOwner).transfer(a1.address, ethers.utils.parseEther("1000"));
         await dvd.connect(a1).increaseAllowance(xdvd.address, UInt256Max());
@@ -416,12 +416,12 @@ contract("DAOmine", async () => {
         await daoMine.connect(a1).yield(1);
         user1Info = await daoMine.user(1, a1.address);
         const receivedPendingDvd = (new BigNumber(0.6375)).multipliedBy(pendingBlocks+1);
-        const receivedTierBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
+        const receivedBonus = receivedPendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
         expect(user1Info.finishedBlock).equal(parseInt(endBlock) + 1);
-        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(receivedTierBonus.toString()));
+        expect(user1Info.receivedBonus).equal(ethers.utils.parseEther(receivedBonus.toString()));
         expect(user1Info.lastDepositTime).equal(await blockTimestamp());
         expect(user1Info.finishedDVD).equal(ethers.utils.parseEther(receivedPendingDvd.toString()));
-        const receivedAmount = receivedPendingDvd.plus(receivedTierBonus).shiftedBy(18);
+        const receivedAmount = receivedPendingDvd.plus(receivedBonus).shiftedBy(18);
 
         let [, amountDeposited] = await xdvd.getTier(a1.address);
         let xdvdPoolInfo = await daoMine.user(0, a1.address);
@@ -459,7 +459,7 @@ contract("DAOmine", async () => {
 
         expect(await dvd.balanceOf(a1.address)).equal(0);
         expect((await daoMine.user(1, a1.address)).finishedDVD).equal(0);
-        expect((await daoMine.user(1, a1.address)).receivedTierBonus).equal(0);
+        expect((await daoMine.user(1, a1.address)).receivedBonus).equal(0);
 
         await dvd.connect(dvdOwner).transfer(a1.address, ethers.utils.parseEther("1000"));
         await dvd.connect(a1).increaseAllowance(xdvd.address, UInt256Max());
@@ -478,7 +478,7 @@ contract("DAOmine", async () => {
         let penalty = pendingDvd.multipliedBy((await daoMine.earlyWithdrawalPenaltyPercent()).toString()).dividedBy(100);
         pendingDvd = pendingDvd.minus(penalty);
         let tierBonus = pendingDvd.multipliedBy(endBlock-startBlock+1).dividedBy(pendingBlocks+1).multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
-        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.toString()));
+        expect(user1Info.receivedBonus).equal(ethers.utils.parseEther(tierBonus.toString()));
         expect(user1Info.lastDepositTime).equal(letDepositTime);
 
         // deposit again
@@ -489,6 +489,6 @@ contract("DAOmine", async () => {
         let receivedPendingDvd1 = (new BigNumber(0.6375)).multipliedBy(2);
         let tierBonus1 = receivedPendingDvd1.multipliedBy(await daoMine.tierBonusRate(tier)).dividedBy(100);
         // penalty is 0 because period is too short
-        expect(user1Info.receivedTierBonus).equal(ethers.utils.parseEther(tierBonus.plus(tierBonus1).toString()));
+        expect(user1Info.receivedBonus).equal(ethers.utils.parseEther(tierBonus.plus(tierBonus1).toString()));
     });
 });
