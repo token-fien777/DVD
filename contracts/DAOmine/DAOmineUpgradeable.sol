@@ -120,8 +120,8 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
     event SetPoolWeight(uint256 indexed poolId, uint256 indexed poolWeight, uint256 totalPoolWeight);
     event UpdatePool(uint256 indexed poolId, uint256 indexed lastRewardBlock, uint256 totalDVD);
     event Deposit(address indexed account, uint256 indexed poolId, uint256 amount);
-    event Reward(address indexed account, uint256 indexed poolId, uint256 reward, uint256 bonus);
-    event Yield(address indexed account, uint256 indexed poolId, uint256 reward, uint256 bonus);
+    event Reward(address indexed account, uint256 indexed poolId, uint256 lpAmount, uint256 reward, uint256 bonus);
+    event Yield(address indexed account, uint256 indexed poolId, uint256 lpAmount, uint256 reward, uint256 bonus);
     event Withdraw(address indexed account, uint256 indexed poolId, uint256 amount);
     event EmergencyWithdraw(address indexed account, uint256 indexed poolId, uint256 amount);
 
@@ -485,7 +485,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
                 user_.finishedBlock = pool_.lastRewardBlock;
                 user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
                 pendingDVD_ = 0;
-                emit Reward(_account, _pid, pendingDVD_, bonus_);
+                emit Reward(_account, _pid, user_.lpAmount, pendingDVD_, bonus_);
             }
         } else {
             user_.finishedBlock = block.number;
@@ -534,7 +534,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
             if (0 < bonus_) dvd.mint(account_, bonus_);
             user_.finishedBlock = pool_.lastRewardBlock;
             user_.receivedTierBonus = user_.receivedTierBonus.add(bonus_);
-            emit Reward(account_, _pid, pendingDVD_, bonus_);
+            emit Reward(account_, _pid, user_.lpAmount, pendingDVD_, bonus_);
         }
 
         if(_amount > 0) {
@@ -612,7 +612,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
 
         _deposit(address(this), account_, _xdvdPid, xdvdAmount_);
 
-        emit Yield(account_, _pid, pendingDVD_, bonus_);
+        emit Yield(account_, _pid, user_.lpAmount, pendingDVD_, bonus_);
     }
 
     uint256[35] private __gap;
