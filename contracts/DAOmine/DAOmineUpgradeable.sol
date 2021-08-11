@@ -8,10 +8,11 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/SafeERC20Upgradeable.sol
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 import "../DAOventuresTokenImplementation.sol";
-import "../interfaces/IxDVD.sol";
 import "../interfaces/IDAOmine.sol";
+import "../interfaces/IxDVD.sol";
+import "../interfaces/IDAOvvip.sol";
 
-contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
+contract DAOmineUpgradeable is OwnableUpgradeable {
     using AddressUpgradeable for address;
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using SafeMathUpgradeable for uint256;
@@ -30,7 +31,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
     struct Pool {
         // Address of LP token
         address lpTokenAddress;
-        // Weight of pool           
+        // Weight of pool
         uint256 poolWeight;
         // Last block number that DVDs distribution occurs for pool
         uint256 lastRewardBlock; 
@@ -77,7 +78,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
     // xDVD contract
     IxDVD public xdvd;
     // Pool ID for xDVD
-    uint256 private _xdvdPid;
+    uint256 public xdvdPid;
 
     // Percent of DVD is distributed to treasury wallet per block: 24.5%
     uint256 public constant TREASURY_WALLET_PERCENT = 2450;
@@ -111,10 +112,18 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
     // Percent of early withdrawal penalty. For example, 30 if the penalty is 30% rewards.
     uint256 public earlyWithdrawalPenaltyPercent;
 
+    //
+    // v2 variables
+    //
+    // DAOvvip contract
+    IDAOvvip public daoVvip;
+    // Pool ID for DAOvvip
+    uint256 private daoVvipPid;
+
     event SetWalletAddress(address indexed treasuryWalletAddr, address indexed communityWalletAddr);
     event SetDVD(DAOventuresTokenImplementation indexed dvd);
-    event SetXDVD(IxDVD indexed xdvd);
-    event SetXDVDPid(uint256 xdvdpid);
+    event SetXDVD(IxDVD indexed xdvd, uint256 xdvdPid);
+    event SetDAOvvip(IDAOvvip indexed daoVvip, uint256 daoVvipPid);
     event SetTierBonusRate(uint32[] _tierBonusRate);
     event SetEarlyWithdrawalPenalty(uint256 _period, uint256 _percent);
     event TransferDVDOwnership(address indexed newOwner);
@@ -145,7 +154,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         address _treasuryWalletAddr,
         address _communityWalletAddr,
         DAOventuresTokenImplementation _dvd,
-        IxDVD _xdvd,
+        address _xdvd,
         uint256 _xdvdPoolWeight,
         uint32[] memory _tierBonusRate,
         uint256 _earlyWithdrawalPenaltyPeriod,
@@ -169,9 +178,9 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
 
         setWalletAddress(_treasuryWalletAddr, _communityWalletAddr);
 
+        addPool(_xdvd, _xdvdPoolWeight, false);
         setDVD(_dvd);
         setXDVD(_xdvd);
-        addPool(address(_xdvd), _xdvdPoolWeight, false);
 
         setTierBonusRate(_tierBonusRate);
         setEarlyWithdrawalPenalty(_earlyWithdrawalPenaltyPeriod, _earlyWithdrawalPenaltyPercent);
@@ -206,26 +215,39 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
     /**
      * @notice Set xDVD token address. Can only be called by owner
      */
-    function setXDVD(IxDVD _xdvd) public onlyOwner {
-        require(address(_xdvd) != address(0), "xDVD address should not be zero address");
+    function setXDVD(address _xdvd) public onlyOwner {
         require(address(dvd) != address(0), "DVD address should be already set");
+        require(_xdvd != address(0), "xDVD address should not be zero address");
+
+        Pool memory _pool = poolMap[_xdvd];
+        require(_pool.lpTokenAddress == _xdvd, "xDVD pool is not added yet");
 
         if (address(xdvd) != address(0)) {
             dvd.approve(address(xdvd), 0);
         }
-        dvd.approve(address(_xdvd), type(uint256).max);
-        xdvd = _xdvd;
-        emit SetXDVD(xdvd);
-
-        Pool memory _pool = poolMap[address(_xdvd)];
-        if (_pool.lpTokenAddress != address(0)) {
-            _xdvdPid = _pool.pid;
-            emit SetXDVDPid(_xdvdPid);
-        }
+        dvd.approve(_xdvd, type(uint256).max);
+        xdvd = IxDVD(_xdvd);
+        xdvdPid = _pool.pid;
+        emit SetXDVD(xdvd, xdvdPid);
     }
 
-    function xdvdPid() external view override returns(uint256) {
-        return _xdvdPid;
+    /**
+     * @notice Set DAOvvip token address. Can only be called by owner
+     */
+    function setDAOvvip(address _daoVvip) public onlyOwner {
+        require(address(dvd) != address(0), "DVD address should be already set");
+        require(_daoVvip != address(0), "DAOvvip address should not be zero address");
+
+        Pool memory _pool = poolMap[_daoVvip];
+        require(_pool.lpTokenAddress == _daoVvip, "DAOvvip pool is not added yet");
+
+        if (address(daoVvip) != address(0)) {
+            dvd.approve(address(daoVvip), 0);
+        }
+        dvd.approve(_daoVvip, type(uint256).max);
+        daoVvip = IDAOvvip(_daoVvip);
+        daoVvipPid = _pool.pid;
+        emit SetDAOvvip(daoVvip, daoVvipPid);
     }
 
     /**
@@ -268,7 +290,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
      */
     function poolLength() external view returns(uint256) {
         return pool.length;
-    } 
+    }
 
     /** 
      * @notice Return reward multiplier over given _from to _to block. [_from, _to)
@@ -391,11 +413,6 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         poolMap[_lpTokenAddress] = newPool_;
 
         emit AddPool(_lpTokenAddress, _poolWeight, lastRewardBlock);
-
-        if (address(xdvd) == _lpTokenAddress) {
-            _xdvdPid = newPool_.pid;
-            emit SetXDVDPid(_xdvdPid);
-        }
     }
 
     /** 
@@ -465,7 +482,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         _deposit(msg.sender, msg.sender, _pid, _amount);
     }
 
-    function depositByProxy(address _account, uint256 _pid, uint256 _amount) external override onlyContract {
+    function depositByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract {
         require(_account != address(0), "Invalid account address");
         _deposit(msg.sender, _account, _pid, _amount);
     }
@@ -512,16 +529,35 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
      * @param _pid       Id of the pool to be withdrawn from
      * @param _amount    amount of LP tokens to be withdrawn
      */
-    function withdraw(uint256 _pid, uint256 _amount) public {
-        address account_ = msg.sender;
+    function withdraw(uint256 _pid, uint256 _amount) external onlyEOA {
+        require(_pid != daoVvipPid, "This pool is not allowed to directly withdraw by user");
+        _withdraw(msg.sender, msg.sender, _pid, _amount);
+    }
+
+    function withdrawByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract returns (uint256) {
+        require(_account != address(0), "Invalid account address");
+        require(pool[_pid].lpTokenAddress == msg.sender, "Withdrawal is only allowed to the LP token contract");
+        (uint256 pendingDVD_, uint256 bonus_) = _withdraw(msg.sender, _account, _pid, _amount);
+        return user[_pid][_account].lpAmount;
+    }
+
+    /** 
+     * @notice Withdraw LP tokens
+     *
+     * @param _proxy     This should be user's address or trustable contract address
+     * @param _pid       Id of the pool to be withdrawn from
+     * @param _amount    amount of LP tokens to be withdrawn
+     */
+    function _withdraw(address _proxy, address _account, uint256 _pid, uint256 _amount) internal returns (uint256, uint256) {
         Pool storage pool_ = pool[_pid];
-        User storage user_ = user[_pid][account_];
+        User storage user_ = user[_pid][_account];
 
         require(user_.lpAmount >= _amount, "Not enough LP token balance");
 
         updatePool(_pid);
 
         uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
+        uint256 bonus_;
 
         if(pendingDVD_ > 0) {
             if (block.timestamp < user_.lastDepositTime.add(earlyWithdrawalPenaltyPeriod)) {
@@ -531,23 +567,24 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
                     pendingDVD_ = pendingDVD_.sub(penalty_);
                 }
             }
-            uint256 bonus_ = _pendingTierBonus(account_, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
-            _safeDVDTransfer(account_, pendingDVD_);
-            if (0 < bonus_) dvd.mint(account_, bonus_);
+            bonus_ = _pendingTierBonus(_account, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
+            _safeDVDTransfer(_proxy, pendingDVD_);
+            if (0 < bonus_) dvd.mint(_proxy, bonus_);
             user_.finishedBlock = pool_.lastRewardBlock;
             user_.receivedBonus = user_.receivedBonus.add(bonus_);
-            emit Reward(account_, _pid, user_.lpAmount, pendingDVD_, bonus_);
+            emit Reward(_account, _pid, user_.lpAmount, pendingDVD_, bonus_);
         }
 
         if(_amount > 0) {
             user_.lpAmount = user_.lpAmount.sub(_amount);
-            IERC20Upgradeable(pool_.lpTokenAddress).safeTransfer(account_, _amount);
+            IERC20Upgradeable(pool_.lpTokenAddress).safeTransfer(_proxy, _amount);
         }
 
         user_.finishedDVD = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether);
         // user_.lastWithdrawalTime = block.number;
 
-        emit Withdraw(account_, _pid, _amount);
+        emit Withdraw(_account, _pid, _amount);
+        return (pendingDVD_, bonus_);
     }
 
     /** 
@@ -591,6 +628,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
      * @param _pid       Id of the pool to be deposited to
      */
     function yield(uint256 _pid) external onlyEOA {
+        require(_pid != daoVvipPid, "Please calls DAOvvipYield for DAOvvip");
         address account_ = msg.sender;
         Pool storage pool_ = pool[_pid];
         User storage user_ = user[_pid][account_];
@@ -613,7 +651,7 @@ contract DAOmineUpgradeable is IDAOmine, OwnableUpgradeable {
         xdvd.depositByProxy(account_, dvdAmount_);
         uint256 xdvdAmount_ = xdvd.balanceOf(address(this)).sub(xdvdBalance_);
 
-        _deposit(address(this), account_, _xdvdPid, xdvdAmount_);
+        _deposit(address(this), account_, xdvdPid, xdvdAmount_);
 
         emit Yield(account_, _pid, user_.lpAmount, pendingDVD_, bonus_);
     }
