@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 import "../DAOventuresTokenImplementation.sol";
 import "../interfaces/IDAOmine.sol";
+import "../interfaces/IxDVDBase.sol";
 import "../interfaces/IxDVD.sol";
 import "../interfaces/IDAOvvip.sol";
 
@@ -133,6 +134,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     event Deposit(address indexed account, uint256 indexed poolId, uint256 amount);
     event Reward(address indexed account, uint256 indexed poolId, uint256 lpAmount, uint256 reward, uint256 bonus);
     event Yield(address indexed account, uint256 indexed poolId, uint256 lpAmount, uint256 reward, uint256 bonus);
+    event Harvest(address indexed account, uint256 indexed poolId, uint256 lpAmount, uint256 reward, uint256 bonus);
     event Withdraw(address indexed account, uint256 indexed poolId, uint256 amount);
     event EmergencyWithdraw(address indexed account, uint256 indexed poolId, uint256 amount);
 
@@ -222,10 +224,12 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         Pool memory _pool = poolMap[_xdvd];
         require(_pool.lpTokenAddress == _xdvd, "xDVD pool is not added yet");
 
+        // Allow access xDVD because yield() calls xDVD.depositByProxy()
         if (address(xdvd) != address(0)) {
             dvd.approve(address(xdvd), 0);
         }
         dvd.approve(_xdvd, type(uint256).max);
+
         xdvd = IxDVD(_xdvd);
         xdvdPid = _pool.pid;
         emit SetXDVD(xdvd, xdvdPid);
@@ -241,10 +245,6 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         Pool memory _pool = poolMap[_daoVvip];
         require(_pool.lpTokenAddress == _daoVvip, "DAOvvip pool is not added yet");
 
-        if (address(daoVvip) != address(0)) {
-            dvd.approve(address(daoVvip), 0);
-        }
-        dvd.approve(_daoVvip, type(uint256).max);
         daoVvip = IDAOvvip(_daoVvip);
         daoVvipPid = _pool.pid;
         emit SetDAOvvip(daoVvip, daoVvipPid);
@@ -345,7 +345,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         uint256 pendingDVD_ = pendingDVD(_pid, _account);
         if (pendingDVD_ == 0) return 0;
 
-        return _pendingTierBonus(_account, user_.finishedBlock, block.number, pendingDVD_);
+        return _pendingTierBonus(_pid, _account, user_.finishedBlock, block.number, pendingDVD_);
     }
 
     /**
@@ -355,16 +355,18 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
      * @param _to           To block number (exluded)
      * @param _pendingDVD   The pending reward of _account  from _from block to _to block
      */
-    function _pendingTierBonus(address _account, uint256 _from, uint256 _to, uint256 _pendingDVD) internal view returns(uint256) {
+    function _pendingTierBonus(uint256 _pid, address _account, uint256 _from, uint256 _to, uint256 _pendingDVD) internal view returns(uint256) {
         if (_from < START_BLOCK) {_from = START_BLOCK;}
         if (_to > END_BLOCK) {_to = END_BLOCK;}
         if (_from >= _to) return 0;
+
+        IxDVDBase daoVip = (daoVvipPid == _pid && daoVvipPid != 0) ? IxDVDBase(daoVvip) : IxDVDBase(xdvd);
 
         uint256 pendingBonus_;
         uint256 pendingBlocks_ = _to.sub(_from);
 
         while(_from < _to) {
-            (uint8 tier_, , uint256 endBlock_) = xdvd.tierAt(_account, _from);
+            (uint8 tier_, , uint256 endBlock_) = daoVip.tierAt(_account, _from);
             if (_to <= endBlock_) {
                 // _to block is not contained in the pending DVD
                 endBlock_ = _to.sub(1);
@@ -482,9 +484,10 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         _deposit(msg.sender, msg.sender, _pid, _amount);
     }
 
-    function depositByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract {
+    function depositByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract returns(uint256) {
         require(_account != address(0), "Invalid account address");
         _deposit(msg.sender, _account, _pid, _amount);
+        return user[_pid][_account].lpAmount;
     }
 
     function _deposit(address _proxy, address _account, uint256 _pid, uint256 _amount) internal {
@@ -498,7 +501,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
             pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
             if(pendingDVD_ > 0 && _proxy == _account) {
                 // Due to the security issue, we will transfer DVD rewards in only case of users directly deposit.
-                uint256 bonus_ = _pendingTierBonus(_account, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
+                uint256 bonus_ = _pendingTierBonus(_pid, _account, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
                 _safeDVDTransfer(_account, pendingDVD_);
                 if (0 < bonus_) dvd.mint(_account, bonus_);
                 user_.finishedBlock = pool_.lastRewardBlock;
@@ -534,11 +537,13 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         _withdraw(msg.sender, msg.sender, _pid, _amount);
     }
 
-    function withdrawByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract returns (uint256) {
-        require(_account != address(0), "Invalid account address");
+    function withdrawByProxy(address _account, uint256 _pid, uint256 _amount) external onlyContract returns (uint256, uint256, uint256) {
+        require(_pid == daoVvipPid, "This pool is not allowed to withdraw by proxy");
         require(pool[_pid].lpTokenAddress == msg.sender, "Withdrawal is only allowed to the LP token contract");
+        require(_account != address(0), "Invalid account address");
+
         (uint256 pendingDVD_, uint256 bonus_) = _withdraw(msg.sender, _account, _pid, _amount);
-        return user[_pid][_account].lpAmount;
+        return (user[_pid][_account].lpAmount, pendingDVD_, bonus_);
     }
 
     /** 
@@ -567,7 +572,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
                     pendingDVD_ = pendingDVD_.sub(penalty_);
                 }
             }
-            bonus_ = _pendingTierBonus(_account, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
+            bonus_ = _pendingTierBonus(_pid, _account, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
             _safeDVDTransfer(_proxy, pendingDVD_);
             if (0 < bonus_) dvd.mint(_proxy, bonus_);
             user_.finishedBlock = pool_.lastRewardBlock;
@@ -630,21 +635,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     function yield(uint256 _pid) external onlyEOA {
         require(_pid != daoVvipPid, "Please calls DAOvvipYield for DAOvvip");
         address account_ = msg.sender;
-        Pool storage pool_ = pool[_pid];
-        User storage user_ = user[_pid][account_];
-        require(0 < user_.lpAmount, "User should deposit on the pool before yielding");
-
-        updatePool(_pid);
-
-        uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
-        require(0 < pendingDVD_, "User should have the pending DVD rewards");
-
-        uint256 bonus_ = _pendingTierBonus(account_, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
-        if (0 < bonus_) dvd.mint(address(this), bonus_);
-        user_.finishedBlock = pool_.lastRewardBlock;
-        user_.receivedBonus = user_.receivedBonus.add(bonus_);
-        user_.finishedDVD = user_.finishedDVD.add(pendingDVD_);
-        user_.lastDepositTime = block.timestamp;
+        (uint256 pendingDVD_, uint256 bonus_) = _harvest(account_, _pid);
 
         uint256 dvdAmount_ = pendingDVD_.add(bonus_);
         uint256 xdvdBalance_ = xdvd.balanceOf(address(this));
@@ -653,7 +644,44 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
 
         _deposit(address(this), account_, xdvdPid, xdvdAmount_);
 
-        emit Yield(account_, _pid, user_.lpAmount, pendingDVD_, bonus_);
+        emit Yield(account_, _pid, user[_pid][account_].lpAmount, pendingDVD_, bonus_);
+    }
+
+    function _harvest(address _account, uint256 _pid) internal returns (uint256, uint256) {
+        Pool storage pool_ = pool[_pid];
+        User storage user_ = user[_pid][_account];
+        require(0 < user_.lpAmount, "User should deposit on the pool before yielding");
+
+        updatePool(_pid);
+
+        uint256 pendingDVD_ = user_.lpAmount.mul(pool_.accDVDPerLP).div(1 ether).sub(user_.finishedDVD);
+        require(0 < pendingDVD_, "User should have the pending DVD rewards");
+
+        uint256 bonus_ = _pendingTierBonus(_pid, _account, user_.finishedBlock, pool_.lastRewardBlock, pendingDVD_);
+        if (0 < bonus_) dvd.mint(address(this), bonus_);
+        user_.finishedBlock = pool_.lastRewardBlock;
+        user_.receivedBonus = user_.receivedBonus.add(bonus_);
+        user_.finishedDVD = user_.finishedDVD.add(pendingDVD_);
+        user_.lastDepositTime = block.timestamp;
+
+        return (pendingDVD_, bonus_);
+    }
+
+    /**
+     * @notice Take DVD rewards.
+     *
+     * @param _pid       Id of the pool to be deposited to
+     */
+    function harvestByProxy(address _account, uint256 _pid) external onlyContract returns (uint256, uint256, uint256) {
+        require(_pid == daoVvipPid, "This pool is not allowed to withdraw by proxy");
+        require(pool[_pid].lpTokenAddress == msg.sender, "Withdrawal is only allowed to the LP token contract");
+        require(_account != address(0), "Invalid account address");
+
+        (uint256 pendingDVD_, uint256 bonus_) = _harvest(_account, _pid);
+        _safeDVDTransfer(msg.sender, pendingDVD_.add(bonus_));
+        emit Harvest(_account, _pid, user[_pid][_account].lpAmount, pendingDVD_, bonus_);
+
+        return (user[_pid][_account].lpAmount, pendingDVD_, bonus_);
     }
 
     uint256[35] private __gap;

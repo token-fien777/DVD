@@ -13,7 +13,7 @@ import "../interfaces/IDAOmine.sol";
 import "../interfaces/IDAOvvip.sol";
 
 // This contract handles swapping to and from DAOvvip, DAOventures's vvip token
-contract DAOvvip is OwnableUpgradeable, ERC20Upgradeable {
+contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
     using SafeMathUpgradeable for uint256;
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
@@ -41,6 +41,7 @@ contract DAOvvip is OwnableUpgradeable, ERC20Upgradeable {
 
     event Deposit(address indexed user, uint256 DVDAmount, uint256 DAOvvipAmount);
     event Withdraw(address indexed user, uint256 DVDAmount, uint256 DAOvvipAmount, uint256 DVDRewards);
+    event Yield(address indexed user, uint256 DVDAmount, uint256 DAOvvipAmount);
     event TierAmount(uint256[] newTierAmounts);
     event SetDAOmine(address indexed daoMaine);
     event Tier(address indexed user, uint8 prevTier, uint8 newTier);
@@ -72,8 +73,13 @@ contract DAOvvip is OwnableUpgradeable, ERC20Upgradeable {
 
         // Lock the DVD in the contract
         dvd.safeTransferFrom(account, address(this), _amount);
-        user[account].amountDeposited = user[account].amountDeposited.add(_amount);
-        _updateSnapshot(account, user[account].amountDeposited);
+        uint256 what = _deposit(account, _amount);
+        emit Deposit(account, _amount, what);
+    }
+
+    function _deposit(address _account, uint256 _amount) internal returns(uint256) {
+        user[_account].amountDeposited = user[_account].amountDeposited.add(_amount);
+        _updateSnapshot(_account, user[_account].amountDeposited);
 
         // Gets the amount of DVD locked in the contract
         uint256 totalDVD = dvd.balanceOf(address(this));
@@ -88,9 +94,9 @@ contract DAOvvip is OwnableUpgradeable, ERC20Upgradeable {
             what = _amount.mul(totalShares).div(totalDVD);
         }
         _mint(address(this), what);
-        emit Deposit(account, _amount, what);
 
-        daoMine.depositByProxy(account, poolId, what);
+        daoMine.depositByProxy(_account, poolId, what);
+        return what;
     }
 
     // Claim back your DVDs. Unclocks the staked + gained DVD and burns DAOvvip
@@ -103,7 +109,7 @@ contract DAOvvip is OwnableUpgradeable, ERC20Upgradeable {
         // Calculates the amount of DVD the DAOvvip is worth
         uint256 what = _share.mul(dvdBalance).div(totalShares);
 
-        uint256 leftShare = daoMine.withdrawByProxy(account, poolId, _share);
+        (uint256 leftShare, ,) = daoMine.withdrawByProxy(account, poolId, _share);
         uint256 dvdRewards = dvd.balanceOf(address(this)).sub(dvdBalance);
 
         user[msg.sender].amountDeposited = user[msg.sender].amountDeposited.mul(leftShare).div(leftShare.add(_share));
@@ -113,6 +119,20 @@ contract DAOvvip is OwnableUpgradeable, ERC20Upgradeable {
         dvd.safeTransfer(msg.sender, what.add(dvdRewards));
 
         emit Withdraw(msg.sender, what, _share, dvdRewards);
+    }
+
+    /**
+     * @notice Take DVD rewards and redeposit it into xDVD pool.
+     */
+    function yield() external onlyEOA {
+        address account = msg.sender;
+
+        uint256 dvdBalance = dvd.balanceOf(address(this));
+        daoMine.harvestByProxy(account, poolId);
+        uint256 dvdRewards = dvd.balanceOf(address(this)).sub(dvdBalance);
+
+        uint256 what = _deposit(account, dvdRewards);
+        emit Yield(account, dvdRewards, what);
     }
 
     function setTierAmount(uint[] memory _tierAmounts) external onlyOwner {
