@@ -120,6 +120,14 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     IDAOvvip public daoVvip;
     // Pool ID for DAOvvip
     uint256 private daoVvipPid;
+    // Locked period in days for DAOvvip
+    uint32[] public lockDays;
+    // Bonus rate per locked period for DAOvvip
+    uint32[] public lockBonusRate;
+    // Early harvest period in second
+    uint256 public earlyHarvestPenaltyPeriod;
+    // Percent of early harvest penalty. For example, 30 if the penalty is 30% rewards.
+    uint256 public earlyHarvestPenaltyPercent;
 
     event SetWalletAddress(address indexed treasuryWalletAddr, address indexed communityWalletAddr);
     event SetDVD(DAOventuresTokenImplementation indexed dvd);
@@ -127,6 +135,8 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     event SetDAOvvip(IDAOvvip indexed daoVvip, uint256 daoVvipPid);
     event SetTierBonusRate(uint32[] _tierBonusRate);
     event SetEarlyWithdrawalPenalty(uint256 _period, uint256 _percent);
+    event SetBonusForLockedCapital(uint32[] newLockDay, uint32[] newLockBonusRate);
+    event SetEarlyHarvestPenalty(uint256 _period, uint256 _percent);
     event TransferDVDOwnership(address indexed newOwner);
     event AddPool(address indexed lpTokenAddress, uint256 indexed poolWeight, uint256 indexed lastRewardBlock);
     event SetPoolWeight(uint256 indexed poolId, uint256 indexed poolWeight, uint256 totalPoolWeight);
@@ -277,6 +287,39 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     }
 
     /**
+     * @notice Set locked period and bonus rate for DAOvvip
+     */
+    function setBonusForLockedCapital(uint32[] memory _days, uint32[] memory _bonusRate) public onlyOwner {
+        require(0 < _days.length, "The count should be greater than 0");
+        require(_days.length <= 10, "The count is limited by 10");
+        require(_days.length == _bonusRate.length, "The length is mismatch");
+
+        uint32 prevDay = 0;
+        for(uint i = 0; i < _bonusRate.length; i ++) {
+            require(_bonusRate[i] <= TIER_BONUS_MAX_RATE, "The maximum rate is 400");
+            require(prevDay < _days[i], "The each periods should be greater that previous period");
+            prevDay = _days[i];
+        }
+
+        lockDays = _days;
+        lockBonusRate = _bonusRate;
+        emit SetBonusForLockedCapital(lockDays, lockBonusRate);
+    }
+
+    /**
+     * @notice Set the period and rate of the early harvest penalty on DAOvvip pool. Can only be called by owner
+     *
+     * @param _period       Period in second
+     * @param _percent      Percent of penalty. For example, 30 if the penalty is 30% rewards.
+     */
+    function setEarlyHarvestPenalty(uint256 _period, uint256 _percent) public onlyOwner {
+        require(_percent <= 100, "The rate should equal or less than 100");
+        earlyHarvestPenaltyPeriod = _period;
+        earlyHarvestPenaltyPercent = _percent;
+        emit SetEarlyHarvestPenalty(earlyHarvestPenaltyPeriod, earlyHarvestPenaltyPercent);
+    }
+
+    /**
      * @notice Transfer ownership of DVD token. Can only be called by this smart contract owner
      *
      */
@@ -385,6 +428,27 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
             _from = endBlock_.add(1);
         }
         return pendingBonus_;
+    }
+
+    function pendingBonusForLockedCapital(address _account) public view returns(uint256) {
+        User storage user_ = user[daoVvipPid][_account];
+        if (user_.lpAmount == 0) return 0;
+
+        uint256 pendingDVD_ = pendingDVD(daoVvipPid, _account);
+        if (pendingDVD_ == 0) return 0;
+
+        return _pendingBonusForLockedCapital(_account, pendingDVD_);
+    }
+
+    function _pendingBonusForLockedCapital(address _account, uint256 _pendingDVD) internal view returns(uint256) {
+        User storage user_ = user[daoVvipPid][_account];
+        uint32 days_  = uint32(uint256(block.timestamp).sub(user_.lastDepositTime).div(1 days));
+        for (uint i = lockDays.length; 0 < i ; i --) {
+            if (lockDays[i-1] <= days_) {
+                return _pendingDVD.mul(lockBonusRate[i-1]).div(TIER_BONUS_RATE_DENOMINATOR);
+            }
+        }
+        return 0;
     }
 
     /** 
@@ -541,9 +605,21 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         require(_pid == daoVvipPid, "This pool is not allowed to withdraw by proxy");
         require(pool[_pid].lpTokenAddress == msg.sender, "Withdrawal is only allowed to the LP token contract");
         require(_account != address(0), "Invalid account address");
+        return _withdrawByDAOvvip(_account, _pid, _amount);
+    }
+
+    function _withdrawByDAOvvip(address _account, uint256 _pid, uint256 _amount) internal returns (uint256, uint256, uint256) {
+        require(0 < lockDays.length, "The bonus is not set for the locked capital");
+
+        User storage user_ = user[daoVvipPid][_account];
+        uint32 days_  = uint32(uint256(block.timestamp).sub(user_.lastDepositTime).div(1 days));
+        require(lockDays[0] < days_, "The capital is locked, try again in future");
 
         (uint256 pendingDVD_, uint256 bonus_) = _withdraw(msg.sender, _account, _pid, _amount);
-        return (user[_pid][_account].lpAmount, pendingDVD_, bonus_);
+        uint256 lockBonus_ = _pendingBonusForLockedCapital(_account, pendingDVD_);
+        if (0 < lockBonus_) dvd.mint(msg.sender, lockBonus_);
+
+        return (user[_pid][_account].lpAmount, pendingDVD_, bonus_.add(lockBonus_));
     }
 
     /** 
@@ -676,13 +752,33 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
         require(_pid == daoVvipPid, "This pool is not allowed to withdraw by proxy");
         require(pool[_pid].lpTokenAddress == msg.sender, "Withdrawal is only allowed to the LP token contract");
         require(_account != address(0), "Invalid account address");
-
-        (uint256 pendingDVD_, uint256 bonus_) = _harvest(_account, _pid);
-        _safeDVDTransfer(msg.sender, pendingDVD_.add(bonus_));
-        emit Harvest(_account, _pid, user[_pid][_account].lpAmount, pendingDVD_, bonus_);
-
-        return (user[_pid][_account].lpAmount, pendingDVD_, bonus_);
+        return _harvestByDAOvvip(_account, _pid);
     }
 
-    uint256[35] private __gap;
+    function _harvestByDAOvvip(address _account, uint256 _pid) internal returns (uint256, uint256, uint256) {
+        User storage user_ = user[daoVvipPid][_account];
+
+        (uint256 pendingDVD_, uint256 bonus_) = _harvest(_account, _pid);
+        if (block.timestamp < user_.lastDepositTime.add(earlyHarvestPenaltyPeriod)) {
+            uint256 penalty_ = pendingDVD_.mul(earlyHarvestPenaltyPercent).div(100);
+            if (0 < penalty_) {
+                dvd.burn(penalty_);
+                pendingDVD_ = pendingDVD_.sub(penalty_);
+            }
+            penalty_ = bonus_.mul(earlyHarvestPenaltyPercent).div(100);
+            if (0 < penalty_) {
+                dvd.burn(penalty_);
+                bonus_ = bonus_.sub(penalty_);
+            }
+        }
+        uint256 lockBonus_ = _pendingBonusForLockedCapital(_account, pendingDVD_);
+        if (0 < lockBonus_) dvd.mint(address(this), lockBonus_);
+
+        _safeDVDTransfer(msg.sender, pendingDVD_.add(bonus_).add(lockBonus_));
+        emit Harvest(_account, _pid, user[_pid][_account].lpAmount, pendingDVD_, bonus_.add(lockBonus_));
+
+        return (user[_pid][_account].lpAmount, pendingDVD_, bonus_.add(lockBonus_));
+    }
+
+    uint256[29] private __gap;
 }
