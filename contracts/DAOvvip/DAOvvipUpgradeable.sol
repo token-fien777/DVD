@@ -35,7 +35,6 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
     uint256[] public tierAmounts;
     mapping (address => TierSnapshots) private _accountTierSnapshots;
 
-
     event Deposit(address indexed account, uint256 DVDAmount, uint256 DAOvvipAmount);
     event Withdraw(address indexed account, uint256 amountDvdDeposited, uint256 withdrawnDAOvvipAmount, uint256 amountDvdWithdrawn, uint256 dvdRewards);
     event Yield(address indexed account, uint256 amountDvdDeposited, uint256 dvdRewards);
