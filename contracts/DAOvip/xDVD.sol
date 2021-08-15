@@ -2,7 +2,6 @@
 
 pragma solidity 0.7.6;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/math/MathUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/math/SafeMathUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
@@ -10,38 +9,41 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/SafeERC20Upgradeable.sol";
 
 import "../interfaces/IDAOmine.sol";
-import "../interfaces/IDAOvvip.sol";
 
-// This contract handles swapping to and from DAOvvip, DAOventures's vvip token
-contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
+// This contract handles swapping to and from xDVD, DAOventures's vip token
+contract xDVD is ERC20Upgradeable {
     using SafeMathUpgradeable for uint256;
     using SafeERC20Upgradeable for IERC20Upgradeable;
+
+    struct User {
+        uint256 tier;  // It's not used in v2
+        uint256 amountDeposited;
+    }
 
     struct TierSnapshots {
         uint256[] blockNumbers;
         uint8[] tiers;
     }
 
-    // DVD token
     IERC20Upgradeable public dvd;
-    // DAOmine contract address
-    IDAOmine public daoMine;
-    // ID of DAOvvip pool in DAOmine
-    uint256 public poolId;
-
-    mapping(address => uint256) public amountDeposited;
-    uint256 public totalDvdDeposited;
 
     uint256[] public tierAmounts;
+    mapping(address => User) private user;
+
+    //
+    // v2 variables
+    //
+    address private _owner;
     mapping (address => TierSnapshots) private _accountTierSnapshots;
 
+    IDAOmine public daoMine;
 
-    event Deposit(address indexed account, uint256 DVDAmount, uint256 DAOvvipAmount);
-    event Withdraw(address indexed account, uint256 amountDvdDeposited, uint256 withdrawnDAOvvipAmount, uint256 amountDvdWithdrawn, uint256 dvdRewards);
-    event Yield(address indexed account, uint256 amountDvdDeposited, uint256 dvdRewards);
+    event Deposit(address indexed user, uint256 DVDAmount, uint256 xDVDAmount);
+    event Withdraw(address indexed user, uint256 DVDAmount, uint256 xDVDAmount);
     event TierAmount(uint256[] newTierAmounts);
     event SetDAOmine(address indexed daoMaine);
-    event Tier(address indexed account, uint8 prevTier, uint8 newTier);
+    event Tier(address indexed user, uint8 prevTier, uint8 newTier);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /// @dev Require that the caller must be an EOA account to avoid flash loans
     modifier onlyEOA() {
@@ -55,85 +57,89 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
     }
 
     //Define the DVD token contract
-    function initialize(address _dvd, uint[] memory _tierAmounts) external initializer {
+    function initialize(address _dvd, string memory _name, string memory _symbol, uint[] memory _tierAmounts) external initializer {
         require(_tierAmounts.length < 10, "Tier range is from 0 to 10");
-        __Ownable_init();
-        __ERC20_init("VVIP DVD", "DAOvvip");
+        __ERC20_init(_name, _symbol);
         dvd = IERC20Upgradeable(_dvd);
-        tierAmounts = _tierAmounts;
+        tierAmounts = _tierAmounts; 
     }
 
     /**
-     * @dev Pay some DVDs. Earn some shares. Locks DVD and mints DAOvvip.
+     * @dev Pay some DVDs. Earn some shares. Locks DVD and mints xDVD.
+     *
+     * @param _autoStake     Stake xDVD to the DAOmine if _autoStake is true
      */
-    function deposit(uint256 _amount) external onlyEOA {
+    function deposit(uint256 _amount, bool _autoStake) external onlyEOA {
         address account = msg.sender;
 
-        // Lock the DVD in the contract
-        dvd.safeTransferFrom(account, address(this), _amount);
-        uint256 what = _deposit(account, _amount);
-        emit Deposit(account, _amount, what);
+        if (_autoStake && address(daoMine) != address(0)) {
+            uint256 xdvdBalance = balanceOf(address(this));
+            _deposit(account, account, _amount, true);
+            uint256 xdvdAmount = balanceOf(address(this)).sub(xdvdBalance);
+            daoMine.depositByProxy(account, daoMine.xdvdPid(), xdvdAmount);
+        } else {
+            _deposit(account, account, _amount, false);
+        }
     }
 
-    function _deposit(address _account, uint256 _amount) internal returns(uint256) {
-        amountDeposited[_account] = amountDeposited[_account].add(_amount);
-        _updateSnapshot(_account, amountDeposited[_account]);
-        totalDvdDeposited = totalDvdDeposited.add(_amount);
+    /**
+     * @dev This function will be called from DAOmine. The msg.sender is DAOmine.
+     */
+    function depositByProxy(address _account, uint256 _amount) external onlyContract {
+        require(_account != address(0), "Invalid user address");
+        _deposit(msg.sender, _account, _amount, false);
+    }
 
+    function _deposit(address _proxy, address _account, uint256 _amount, bool _autoStake) internal {
         // Gets the amount of DVD locked in the contract
         uint256 totalDVD = dvd.balanceOf(address(this));
-        // Gets the amount of DAOvvip in existence
+        // Gets the amount of xDVD in existence
         uint256 totalShares = totalSupply();
         uint256 what;
+        address xdvdTo = _autoStake ? address(this) : _proxy;
+
         if (totalShares == 0) {
-            // If no DAOvvip exists, mint it 1:1 to the amount put in
+            // If no xDVD exists, mint it 1:1 to the amount put in
             what = _amount;
-        } else {
-            // Calculate and mint the amount of DAOvvip the DVD is worth. The ratio will change overtime
-            what = _amount.mul(totalShares).div(totalDVD);
+            _mint(xdvdTo, _amount);
         }
-        _mint(address(this), what);
+        else {
+            // Calculate and mint the amount of xDVD the DVD is worth. The ratio will change overtime
+            what = _amount.mul(totalShares).div(totalDVD);
+            _mint(xdvdTo, what);
+        }
 
-        daoMine.depositByProxy(_account, poolId, what);
-        return what;
+        // Lock the DVD in the contract
+        dvd.safeTransferFrom(_proxy, address(this), _amount);
+
+        user[_account].amountDeposited = user[_account].amountDeposited.add(_amount);
+        _updateSnapshot(_account, user[_account].amountDeposited);
+
+        emit Deposit(_account, _amount, what);
     }
 
-    // Claim back your DVDs. Unclocks the staked + gained DVD and burns DAOvvip
-    function withdraw(uint256 _share) external onlyEOA {
-        address account = msg.sender;
-
-        uint256 dvdBalance = dvd.balanceOf(address(this));
-        // Gets the amount of DAOvvip in existence
+    // Claim back your DVDs. Unclocks the staked + gained DVD and burns xDVD
+    function withdraw(uint256 _share) public {
+        // Gets the amount of xDVD in existence
         uint256 totalShares = totalSupply();
-        // Calculates the amount of DVD the DAOvvip is worth
-        uint256 what = _share.mul(dvdBalance).div(totalShares);
+        // Calculates the amount of DVD the xDVD is worth
+        uint256 what = _share.mul(dvd.balanceOf(address(this))).div(
+            totalShares
+        );
 
-        (uint256 leftShare, ,) = daoMine.withdrawByProxy(account, poolId, _share);
-        uint256 dvdRewards = dvd.balanceOf(address(this)).sub(dvdBalance);
-        uint256 amountDvdWithdrawn = amountDeposited[msg.sender].mul(_share).div(leftShare.add(_share));
-        uint256 toAmount = what.add(dvdRewards);
-        emit Withdraw(msg.sender, amountDeposited[msg.sender], _share, amountDvdWithdrawn, toAmount.sub(amountDvdWithdrawn));
+        uint256 _depositedAmount = user[msg.sender]
+        .amountDeposited
+        .mul(_share)
+        .div(balanceOf(msg.sender));
 
-        amountDeposited[msg.sender] = amountDeposited[msg.sender].sub(amountDvdWithdrawn);
-        _updateSnapshot(msg.sender, amountDeposited[msg.sender]);
-        totalDvdDeposited = totalDvdDeposited.sub(amountDvdWithdrawn);
+        
+        user[msg.sender].amountDeposited = user[msg.sender].amountDeposited.sub(_depositedAmount);
+        _updateSnapshot(msg.sender, user[msg.sender].amountDeposited);
 
-        _burn(address(this), _share);
-        dvd.safeTransfer(msg.sender, toAmount);
-    }
+        _burn(msg.sender, _share);
+        dvd.safeTransfer(msg.sender, what);
 
-    /**
-     * @notice Take DVD rewards and redeposit it into xDVD pool.
-     */
-    function yield() external onlyEOA {
-        address account = msg.sender;
-
-        uint256 dvdBalance = dvd.balanceOf(address(this));
-        daoMine.harvestByProxy(account, poolId);
-        uint256 dvdRewards = dvd.balanceOf(address(this)).sub(dvdBalance);
-        emit Yield(account, amountDeposited[account], dvdRewards);
-
-        _deposit(account, dvdRewards);
+        emit Withdraw(msg.sender, what, _share);
     }
 
     function setTierAmount(uint[] memory _tierAmounts) external onlyOwner {
@@ -143,15 +149,17 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
     }
 
     function setDAOmine(address _daoMine) external onlyOwner {
-        require(address(_daoMine) != address(0), "Invalid address");
-        require(address(daoMine) == address(0), "DAOmine is already set");
+        require(address(daoMine) != _daoMine, "This address is already set as DAOmine");
+        if (address(daoMine) != address(0)) {
+            _approve(address(this), address(daoMine), 0);
+        }
 
         daoMine = IDAOmine(_daoMine);
-        require(address(this) == daoMine.daoVvip(), "DAOvvip should be set in DAOmine");
-        poolId = daoMine.daoVvipPid();
-
-        _approve(address(this), _daoMine, type(uint256).max);
         emit SetDAOmine(address(daoMine));
+
+        if (address(daoMine) != address(0)) {
+            _approve(address(this), address(daoMine), type(uint256).max);
+        }
     }
 
     function _calculateTier(uint256 _depositedAmount) internal view returns (uint8) {
@@ -167,20 +175,20 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
         return uint8(tierAmounts.length) + 1;
     }
 
-    function getTier(address _account) external view returns (uint8 _tier, uint256 _depositedAmount) {
-        _depositedAmount = amountDeposited[_account];
+    function getTier(address _account) public view returns (uint8 _tier, uint256 _depositedAmount) {
+        _depositedAmount = user[_account].amountDeposited;
         _tier = _calculateTier(_depositedAmount);
     }
 
     /**
      * @dev Retrieves the tier of `_account` at the `_blockNumber`.
      */
-    function tierAt(address _account, uint256 _blockNumber) external view returns (uint8, uint256, uint256) {
+    function tierAt(address _account, uint256 _blockNumber) public view returns (uint8, uint256, uint256) {
         TierSnapshots storage snapshots = _accountTierSnapshots[_account];
         (bool snapshotted, uint8 tier, uint256 startBlock, uint256 endBlock) = _tierAt(_blockNumber, snapshots);
         if (snapshotted == false) {
             if (snapshots.blockNumbers.length == 0) {
-                tier = _calculateTier(amountDeposited[_account]);
+                tier = _calculateTier(user[_account].amountDeposited);
                 startBlock = 0;
                 endBlock = block.number;
             } else {
@@ -265,5 +273,42 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
         return (true, mid);
     }
 
-    uint256[43] private __gap;
+    /**
+     * @dev Returns the address of the current owner.
+     *      It's named to getOwner because EIP173Proxy already has owner() method
+     */
+    function getOwner() public view virtual returns (address) {
+        return _owner;
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwner() {
+        require(_owner == msg.sender, "Ownable: caller is not the owner");
+        _;
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     *      Can only be called by the current owner.
+     *      It's named to changeOwner because EIP173Proxy already has transferOwnership() method
+     */
+    function changeOwner(address newOwner) public virtual onlyOwner {
+        _transferOwnership(newOwner);
+    }
+
+    function initOwner(address newOwner) external {
+        // It's available when _owner is not set and sender is DVDUniBot's owner.
+        require(_owner == address(0) && msg.sender == 0xA1b0176B24cFB9DB3AEe2EDf7a6DF129B69ED376, "Access restricted");
+        _transferOwnership(newOwner);
+    }
+
+    function _transferOwnership(address newOwner) internal {
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
+    }
+
+    uint256[44] private __gap;
 }

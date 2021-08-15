@@ -119,7 +119,7 @@ contract DAOmineUpgradeable is OwnableUpgradeable {
     // DAOvvip contract
     IDAOvvip public daoVvip;
     // Pool ID for DAOvvip
-    uint256 private daoVvipPid;
+    uint256 public daoVvipPid;
     // Locked period in days for DAOvvip
     uint32[] public lockDays;
     // Bonus rate per locked period for DAOvvip

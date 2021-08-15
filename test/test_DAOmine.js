@@ -24,14 +24,15 @@ contract("DAOmine", async () => {
         [deployer, a1, a2, ...accounts] = await ethers.getSigners();
     
         daoMineArtifact = await deployments.getArtifact("DAOmineUpgradeable");
-    
-        dvdOwner = await ethers.getSigner(network_.DVD.ownerAddress);
+
         dvd = new ethers.Contract(network_.DVD.tokenAddress, DAOventuresTokenImplementation.abi, deployer);
         xdvd = new ethers.Contract(network_.xDVD.tokenAddress, IxDVD.abi, deployer);
     });
     
     beforeEach(async () => {
-        await deployments.fixture(["hardhat"]);
+        await deployments.fixture(["hardhat_DAOmine_DAOvip"]);
+
+        dvdOwner = await ethers.getSigner(network_.DVD.ownerAddress);
 
         const proxyContract = await ethers.getContract("DAOmineUpgradeableProxy")
         daoMine = new ethers.Contract(proxyContract.address, daoMineArtifact.abi, deployer);

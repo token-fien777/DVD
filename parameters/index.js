@@ -49,6 +49,7 @@ module.exports = {
       earlyWithdrawalPenaltyPercent: 50,  // 50%
     },
     DAOvvip: {
+      tierAmounts: ["1000000000000000000000", "10000000000000000000000"], // 1K, 10K
       lockDays: [30,60,90,182,365],  // 30d, 60d, 90d, 6months, 12 months
       lockBonusRate: [20,30,50,100,200],  // multiplier: 1.2x, 1.3x, 1.5x, 2x, 3x
       earlyHarvestPenaltyPeriod: 259200,  // 3 days in second
