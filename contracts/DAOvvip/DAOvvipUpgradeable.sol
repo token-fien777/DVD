@@ -34,14 +34,15 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
     uint256 public poolId;
 
     mapping(address => User) private user;
+    uint256 public totalDvdDeposited;
 
     uint256[] public tierAmounts;
     mapping (address => TierSnapshots) private _accountTierSnapshots;
 
 
     event Deposit(address indexed user, uint256 DVDAmount, uint256 DAOvvipAmount);
-    event Withdraw(address indexed user, uint256 DVDAmount, uint256 DAOvvipAmount, uint256 DVDRewards);
-    event Yield(address indexed user, uint256 DVDAmount, uint256 DAOvvipAmount);
+    event Withdraw(address indexed user, uint256 amountDvdDeposited, uint256 withdrawnDAOvvipAmount, uint256 amountDvdWithdrawn, uint256 dvdRewards);
+    event Yield(address indexed user, uint256 amountDvdDeposited, uint256 dvdRewards);
     event TierAmount(uint256[] newTierAmounts);
     event SetDAOmine(address indexed daoMaine);
     event Tier(address indexed user, uint8 prevTier, uint8 newTier);
@@ -80,6 +81,7 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
     function _deposit(address _account, uint256 _amount) internal returns(uint256) {
         user[_account].amountDeposited = user[_account].amountDeposited.add(_amount);
         _updateSnapshot(_account, user[_account].amountDeposited);
+        totalDvdDeposited = totalDvdDeposited.add(_amount);
 
         // Gets the amount of DVD locked in the contract
         uint256 totalDVD = dvd.balanceOf(address(this));
@@ -111,14 +113,16 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
 
         (uint256 leftShare, ,) = daoMine.withdrawByProxy(account, poolId, _share);
         uint256 dvdRewards = dvd.balanceOf(address(this)).sub(dvdBalance);
+        uint256 amountDvdWithdrawn = user[msg.sender].amountDeposited.mul(_share).div(leftShare.add(_share));
+        uint256 toAmount = what.add(dvdRewards);
+        emit Withdraw(msg.sender, user[msg.sender].amountDeposited, _share, amountDvdWithdrawn, toAmount.sub(amountDvdWithdrawn));
 
-        user[msg.sender].amountDeposited = user[msg.sender].amountDeposited.mul(leftShare).div(leftShare.add(_share));
+        user[msg.sender].amountDeposited = user[msg.sender].amountDeposited.sub(amountDvdWithdrawn);
         _updateSnapshot(msg.sender, user[msg.sender].amountDeposited);
+        totalDvdDeposited = totalDvdDeposited.sub(amountDvdWithdrawn);
 
         _burn(address(this), _share);
-        dvd.safeTransfer(msg.sender, what.add(dvdRewards));
-
-        emit Withdraw(msg.sender, what, _share, dvdRewards);
+        dvd.safeTransfer(msg.sender, toAmount);
     }
 
     /**
@@ -130,9 +134,9 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
         uint256 dvdBalance = dvd.balanceOf(address(this));
         daoMine.harvestByProxy(account, poolId);
         uint256 dvdRewards = dvd.balanceOf(address(this)).sub(dvdBalance);
+        emit Yield(account, user[account].amountDeposited, dvdRewards);
 
-        uint256 what = _deposit(account, dvdRewards);
-        emit Yield(account, dvdRewards, what);
+        _deposit(account, dvdRewards);
     }
 
     function setTierAmount(uint[] memory _tierAmounts) external onlyOwner {
@@ -264,5 +268,5 @@ contract DAOvvipUpgradeable is OwnableUpgradeable, ERC20Upgradeable {
         return (true, mid);
     }
 
-    uint256[44] private __gap;
+    uint256[43] private __gap;
 }
